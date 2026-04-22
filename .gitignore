@@ -2,5 +2,13 @@
 /superpowers/
 /.worktrees/
 /worktrees/
+/node_modules/
+/.npm-cache/
+/\.pnpm-home/
+/.pnpm-store/
+/server/.venv/
+/server/__pycache__/
+*.pyc
+/.pytest_cache/
 .DS_Store
 Thumbs.db

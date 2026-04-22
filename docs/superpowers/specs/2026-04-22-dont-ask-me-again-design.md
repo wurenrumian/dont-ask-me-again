@@ -2,17 +2,18 @@
 
 ## Goal
 
-Build a minimal Obsidian plugin that sends the current note context and an optional selection to a session-aware AI tool server, creates a new note from the structured response, opens that note in the current tab, and links the original note back to the generated note.
+Build a minimal Obsidian plugin that sends the current note context and an optional selection to a session-aware local AI server, creates a new note from the structured response, opens that note in the current tab, and links the original note back to the generated note.
 
 ## Product Boundaries
 
 V1 intentionally optimizes for directness over abstraction:
 
 - Keep the plugin code in the repository root.
-- Treat the server as a tool runtime, not a chat endpoint.
+- Treat the server boundary as a provider-agnostic tool API, not a chat endpoint.
 - Treat sessions as first-class runtime state managed by the user.
 - Treat generated notes as outputs of tool invocations, not as the session container.
 - Prefer deterministic behavior over smart fallback behavior.
+- Integrate `nanobot` as an internal runtime dependency, not as the plugin-facing API.
 
 V1 does not include:
 
@@ -22,6 +23,43 @@ V1 does not include:
 - Editing generated notes in place through the plugin UI.
 - Rich session history browsing.
 - Complex source-note rewrite logic beyond link insertion/replacement.
+- Direct exposure of provider-native response formats such as Anthropic content blocks.
+
+## Architecture Decision
+
+V1 uses a three-layer architecture:
+
+- Obsidian plugin in this repository
+- Custom local server with a stable HTTP API
+- `nanobot` managed as a git submodule and invoked only inside the server boundary
+
+This decision exists to keep the plugin independent from provider-specific formats and from `nanobot`'s internal protocol changes.
+
+### Why `nanobot`
+
+`nanobot` is a better fit than `nanoclaw` for this project because it is not centered on a Claude-first assistant UX. It is closer to a host/runtime layer that can sit behind a custom API. However, it is still not the correct protocol boundary for the plugin:
+
+- it is under active development
+- its native runtime objects are not the same as the plugin's business contract
+- the plugin needs strict fields: `session_id`, `filename`, and `markdown`
+
+Therefore V1 uses `nanobot` only as an internal runtime layer behind a custom server.
+
+### Why a custom server boundary
+
+The plugin must not be forced to understand:
+
+- Anthropic-native tool/result blocks
+- OpenAI-native response objects
+- `nanobot` runtime-specific structures
+
+The plugin only needs a stable business result:
+
+- `session_id`
+- `filename`
+- `markdown`
+
+Keeping this boundary custom allows the server to switch providers or runtimes later without forcing any plugin change.
 
 ## Primary User Flow
 
@@ -65,6 +103,8 @@ Sessions are runtime context identifiers managed by the user.
 - Session lifecycle is manual in V1. There is no timeout or automatic rollover.
 
 The critical rule is that the plugin binds operations to session context, not to output files. A single session may produce multiple notes, and a single source note may participate in multiple sessions over time.
+
+Session persistence is owned by the custom server, not by `nanobot` alone. The server may map one plugin session to one internal `nanobot` conversation state, but that mapping is an internal concern.
 
 ## Plugin UI
 
@@ -115,13 +155,16 @@ The server must behave like a tool executor with strict structured output.
 ```json
 {
   "request_id": "uuid",
-  "tool_name": "obsidian_answer",
   "session_id": "optional-string",
-  "arguments": {
+  "input": {
     "active_file_path": "string",
     "active_file_content": "string",
     "selection_text": "string",
     "instruction": "string"
+  },
+  "client": {
+    "name": "dont-ask-me-again",
+    "version": "0.1.0"
   }
 }
 ```
@@ -130,7 +173,6 @@ The server must behave like a tool executor with strict structured output.
 
 ```json
 {
-  "request_id": "uuid",
   "ok": true,
   "result": {
     "session_id": "string",
@@ -145,7 +187,6 @@ The server must behave like a tool executor with strict structured output.
 
 ```json
 {
-  "request_id": "uuid",
   "ok": false,
   "result": null,
   "error": {
@@ -160,9 +201,30 @@ The server must behave like a tool executor with strict structured output.
 
 - `filename`, `markdown`, and `session_id` are required on success.
 - The plugin does not infer or synthesize missing result fields.
-- The server validates agent output against a schema before responding.
-- If agent output is invalid, the server retries internally or returns a structured error.
+- The server validates runtime output against a schema before responding.
+- If `nanobot` or the underlying model returns invalid content, the server retries internally or returns a structured error.
 - The plugin treats any malformed response as a hard failure and does not edit the source note.
+- The server may internally use Anthropic-compatible formats, OpenAI-compatible formats, or `nanobot` runtime objects, but none of those shapes are exposed to the plugin.
+
+## Runtime Integration
+
+V1 server runtime rules:
+
+- `nanobot` is vendored as a git submodule
+- the submodule is pinned to an explicit commit
+- the server owns the adapter that converts plugin input into runtime input
+- the server owns the normalizer that converts runtime output into:
+  - `session_id`
+  - `filename`
+  - `markdown`
+
+Submodule management is part of the architecture because `nanobot` is not assumed to be globally installed on the user's system.
+
+Recommended repository layout:
+
+- plugin files in repository root
+- server implementation in `server/`
+- `nanobot` submodule in `vendor/nanobot/`
 
 ## Filename and Note Creation Rules
 
@@ -203,6 +265,13 @@ V1 plugin runtime state should include:
 - `floatingBoxVisible`
 - cached editor selection
 - cached source file path
+
+V1 server persistence should include:
+
+- session table or file store keyed by `session_id`
+- provider/runtime metadata
+- prompt and response history required for follow-up turns
+- optional mapping from a plugin session to the underlying `nanobot` runtime session
 
 ## Error Handling
 
@@ -250,5 +319,20 @@ A clean V1 split is:
   - request/response contract, schema validation, transport
 - `file-actions.ts`
   - note creation, collision handling, wikilink generation, source-note mutation
+
+Server-side decomposition:
+
+- `server/app.py`
+  - FastAPI entrypoint and route registration
+- `server/schemas.py`
+  - request and response models
+- `server/session_store.py`
+  - persistent session state
+- `server/runtime/nanobot_adapter.py`
+  - adapter around the vendored `nanobot` runtime
+- `server/prompt_builder.py`
+  - converts Obsidian context into runtime input
+- `server/result_normalizer.py`
+  - enforces the `filename` and `markdown` output schema
 
 This keeps UI, transport, state, and note mutations separate enough to test without overengineering the plugin.

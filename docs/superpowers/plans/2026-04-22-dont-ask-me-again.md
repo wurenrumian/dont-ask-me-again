@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a minimal Obsidian plugin that sends the active note context and optional selection to a session-aware tool server, creates a new note from the structured response, opens it in the current tab, and inserts a wikilink back into the source note.
+**Goal:** Build a minimal Obsidian plugin and companion local server that send active note context and optional selection to a Nanobot-backed runtime, create a new note from the structured response, open it in the current tab, and insert a wikilink back into the source note.
 
-**Architecture:** Keep the repository flat at the root while still separating responsibilities into a few focused TypeScript files. The plugin owns UI state, session state, and note mutation; the server owns AI execution and must return strict structured tool results.
+**Architecture:** Keep the plugin code flat at the repository root, add a dedicated `server/` directory for the local Python boundary, and vendor `nanobot` as a pinned git submodule under `vendor/nanobot/`. The plugin owns UI state and note mutation; the server owns session persistence, Nanobot orchestration, and provider-agnostic response normalization.
 
-**Tech Stack:** Obsidian plugin API, TypeScript, esbuild, Vitest, Zod
+**Tech Stack:** Obsidian plugin API, TypeScript, esbuild, Vitest, Zod, Python, FastAPI, Pydantic, SQLite, Nanobot
 
 ---
 
@@ -16,7 +16,6 @@
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `esbuild.config.mjs`
-- Create: `vitest.config.ts`
 - Create: `main.ts`
 - Create: `styles.css`
 - Create: `settings.ts`
@@ -29,6 +28,17 @@
 - Create: `tests/file-actions.test.ts`
 - Create: `tests/session-manager.test.ts`
 - Create: `tests/selection-context.test.ts`
+- Create: `server/app.py`
+- Create: `server/schemas.py`
+- Create: `server/session_store.py`
+- Create: `server/prompt_builder.py`
+- Create: `server/result_normalizer.py`
+- Create: `server/runtime/nanobot_adapter.py`
+- Create: `server/requirements.txt`
+- Create: `server/tests/test_schemas.py`
+- Create: `server/tests/test_result_normalizer.py`
+- Create: `.gitmodules`
+- Add submodule: `vendor/nanobot`
 
 ### Task 1: Scaffold the plugin package
 
@@ -36,7 +46,6 @@
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `esbuild.config.mjs`
-- Create: `vitest.config.ts`
 - Create: `manifest.json`
 
 - [ ] **Step 1: Write the package manifest**
@@ -50,7 +59,7 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "dev": "node esbuild.config.mjs --watch",
-    "test": "vitest run"
+    "test": "vitest run --environment node --pool threads"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -106,20 +115,7 @@ if (watch) {
 }
 ```
 
-- [ ] **Step 4: Add test runner config**
-
-```ts
-import { defineConfig } from "vitest/config";
-
-export default defineConfig({
-  test: {
-    environment: "node",
-    include: ["tests/**/*.test.ts"]
-  }
-});
-```
-
-- [ ] **Step 5: Add the Obsidian manifest**
+- [ ] **Step 4: Add the Obsidian manifest**
 
 ```json
 {
@@ -133,16 +129,16 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 6: Install dependencies**
+- [ ] **Step 5: Install dependencies**
 
-Run: `npm install`
+Run: `pnpm install`
 
 Expected: `added ... packages` with no install errors
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add package.json tsconfig.json esbuild.config.mjs vitest.config.ts manifest.json package-lock.json
+git add package.json tsconfig.json esbuild.config.mjs manifest.json pnpm-lock.yaml
 git commit -m "chore: scaffold obsidian plugin package"
 ```
 
@@ -594,75 +590,211 @@ git add main.ts floating-ui.ts styles.css main.js
 git commit -m "feat: add plugin bootstrap and floating ui shell"
 ```
 
-### Task 7: Wire tool invocation to note creation
+### Task 7: Stabilize the plugin-server protocol
 
 **Files:**
 - Modify: `main.ts`
 - Modify: `api-client.ts`
-- Modify: `file-actions.ts`
+- Modify: `tests/api-client.test.ts`
 
-- [ ] **Step 1: Implement the submit pipeline**
+- [ ] **Step 1: Update the request contract**
 
 ```ts
-// Inside the submit handler:
-// 1. collect active file and selection
-// 2. build request payload
-// 3. POST to `${serverBaseUrl}/tools/invoke`
-// 4. parse strict response
-// 5. update session manager
-// 6. create target note
-// 7. open target note in current tab
-// 8. mutate source note with wikilink
+// Replace the tool_name/arguments shape with:
+// {
+//   request_id,
+//   session_id,
+//   input: { active_file_path, active_file_content, selection_text, instruction },
+//   client: { name, version }
+// }
 ```
 
-- [ ] **Step 2: Add the minimal transport call**
+- [ ] **Step 2: Update the endpoint**
 
 ```ts
 export async function invokeTool(baseUrl: string, payload: unknown) {
-  const response = await fetch(`${baseUrl}/tools/invoke`, {
+  const response = await requestUrl({
+    url: `${baseUrl}/api/v1/invoke`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    contentType: "application/json",
     body: JSON.stringify(payload)
   });
 
-  return parseToolResponse(await response.json());
+  return parseToolResponse(response.json);
 }
 ```
 
-- [ ] **Step 3: Add note creation helpers**
+- [ ] **Step 3: Run plugin tests**
 
 ```ts
-// Add helpers that call app.vault.create, app.vault.getAvailablePath, and app.workspace.getLeaf(false)
-// Keep source-note edits after successful note creation only
+// Verify API schema tests and helper tests still pass against the new boundary.
 ```
 
-- [ ] **Step 4: Run all tests**
+- [ ] **Step 4: Commit**
 
-Run: `npm test`
+```bash
+git add main.ts api-client.ts tests/api-client.test.ts
+git commit -m "feat: stabilize plugin server protocol"
+```
 
-Expected: PASS for all test files
+### Task 8: Add the Python server skeleton
 
-- [ ] **Step 5: Run the build again**
+**Files:**
+- Create: `server/app.py`
+- Create: `server/schemas.py`
+- Create: `server/session_store.py`
+- Create: `server/prompt_builder.py`
+- Create: `server/result_normalizer.py`
+- Create: `server/requirements.txt`
+- Create: `server/tests/test_schemas.py`
+- Create: `server/tests/test_result_normalizer.py`
 
-Run: `npm run build`
+- [ ] **Step 1: Write the failing server schema tests**
 
-Expected: `main.js` generated with no errors
+```python
+from server.schemas import InvokeRequest, InvokeSuccessResponse
+
+
+def test_request_accepts_expected_shape():
+    payload = InvokeRequest.model_validate(
+        {
+            "request_id": "req-1",
+            "session_id": None,
+            "input": {
+                "active_file_path": "note.md",
+                "active_file_content": "# Note",
+                "selection_text": "entropy",
+                "instruction": "Explain this.",
+            },
+            "client": {"name": "dont-ask-me-again", "version": "0.1.0"},
+        }
+    )
+
+    assert payload.input.selection_text == "entropy"
+```
+
+- [ ] **Step 2: Run the server schema tests to verify failure**
+
+Run: `pytest server/tests/test_schemas.py -q`
+
+Expected: FAIL because `server.schemas` does not exist yet
+
+- [ ] **Step 3: Implement the server schema models and a stub route**
+
+```python
+# app.py exposes POST /api/v1/invoke
+# schemas.py defines request/response models
+# app.py returns a placeholder structured error until runtime is wired
+```
+
+- [ ] **Step 4: Run the schema tests again**
+
+Run: `pytest server/tests/test_schemas.py -q`
+
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add server/app.py server/schemas.py server/session_store.py server/prompt_builder.py server/result_normalizer.py server/requirements.txt server/tests
+git commit -m "feat: add local server skeleton"
+```
+
+### Task 9: Add Nanobot runtime integration via submodule
+
+**Files:**
+- Create: `.gitmodules`
+- Add submodule: `vendor/nanobot`
+- Create: `server/runtime/nanobot_adapter.py`
+
+- [ ] **Step 1: Add the Nanobot submodule**
+
+Run: `git submodule add <official-nanobot-url> vendor/nanobot`
+
+Expected: `.gitmodules` created and `vendor/nanobot` populated
+
+- [ ] **Step 2: Pin and inspect the submodule**
+
+Run: `git submodule status`
+
+Expected: one pinned Nanobot commit listed for `vendor/nanobot`
+
+- [ ] **Step 3: Add the adapter boundary**
+
+```python
+# nanobot_adapter.py owns every direct interaction with the vendored runtime
+# no other server module should call into vendor/nanobot directly
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .gitmodules vendor/nanobot server/runtime/nanobot_adapter.py
+git commit -m "feat: vendor nanobot and add runtime adapter"
+```
+
+### Task 10: Wire the plugin flow to the local server
+
+**Files:**
+- Modify: `main.ts`
+- Modify: `file-actions.ts`
+- Modify: `server/app.py`
+- Modify: `server/result_normalizer.py`
+- Modify: `server/runtime/nanobot_adapter.py`
+
+- [ ] **Step 1: Implement the end-to-end submit pipeline**
+
+```ts
+// 1. collect active file and selection
+// 2. POST to /api/v1/invoke
+// 3. validate the response
+// 4. update session state
+// 5. create generated note
+// 6. replace source selection with wikilink
+// 7. open generated note in the current tab
+```
+
+- [ ] **Step 2: Implement runtime normalization on the server**
+
+```python
+# convert Nanobot runtime output into:
+# { "session_id": str, "filename": str, "markdown": str }
+```
+
+- [ ] **Step 3: Run plugin tests**
+
+Run: `pnpm test`
+
+Expected: PASS for plugin tests
+
+- [ ] **Step 4: Run plugin build**
+
+Run: `pnpm run build`
+
+Expected: `main.js` generated with no TypeScript errors
+
+- [ ] **Step 5: Run server tests**
+
+Run: `pytest server/tests -q`
+
+Expected: PASS for server tests
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add main.ts api-client.ts file-actions.ts tests
-git commit -m "feat: wire tool invocation to note creation flow"
+git add main.ts file-actions.ts server/app.py server/result_normalizer.py server/runtime/nanobot_adapter.py tests server/tests
+git commit -m "feat: wire plugin to nanobot-backed local server"
 ```
 
 ## Self-Review
 
 - Spec coverage:
-  - session lifecycle is covered by Task 2 and Task 6
-  - strict tool contract is covered by Task 3 and Task 7
-  - selection-preserving source-note behavior is covered by Task 4, Task 5, and Task 7
+  - session lifecycle is covered by Task 2, Task 6, and Task 8
+  - strict provider-agnostic contract is covered by Task 3 and Task 7
+  - selection-preserving source-note behavior is covered by Task 4, Task 5, and Task 10
   - floating box and status bar behavior is covered by Task 6
+  - local server and Nanobot integration are covered by Task 8 and Task 9
 - Placeholder scan:
-  - the only non-literal code references are Obsidian API calls called out explicitly in Task 7 Step 3; implementation should expand these exact calls during execution
+  - the only intentionally abstract steps are the Nanobot adapter internals, because they depend on the pinned submodule interface and must be expanded after submodule checkout
 - Type consistency:
-  - `session_id`, `filename`, `markdown`, `selectionText`, and `instruction` are named consistently across tasks
+  - `session_id`, `filename`, `markdown`, `selection_text`, and `instruction` are named consistently across plugin and server tasks
