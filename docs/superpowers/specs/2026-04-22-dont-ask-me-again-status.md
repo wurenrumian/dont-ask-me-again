@@ -39,11 +39,15 @@ Implemented files:
 
 - `server/app.py`
 - `server/config.py`
+- `server/nanobot.config.example.json`
 - `server/schemas.py`
 - `server/session_store.py`
 - `server/prompt_builder.py`
 - `server/result_normalizer.py`
 - `server/runtime/nanobot_adapter.py`
+- `server/tests/test_app.py`
+- `server/tests/test_schemas.py`
+- `server/tests/test_result_normalizer.py`
 
 Current server responsibilities:
 
@@ -53,6 +57,7 @@ Current server responsibilities:
 - normalize runtime output into `session_id`, `filename`, and `markdown`
 - expose `GET /healthz`
 - expose `POST /api/v1/invoke`
+- provide API-level regression coverage for normalized success and invalid runtime output
 
 ## Runtime Integration
 
@@ -65,8 +70,13 @@ Current status of the runtime adapter:
 - the adapter imports `Nanobot` from the vendored source tree
 - the adapter uses `Nanobot.from_config(...).run(...)`
 - the adapter maps plugin sessions to a prefixed runtime `session_key`
+- the repository now includes `server/nanobot.config.example.json` as a starting point for local runtime configuration
 
-The runtime path is present, but it still needs real end-to-end configuration and live request validation against an actual Nanobot config file.
+The runtime path is present, but it still needs:
+
+- a real local Nanobot config with working provider credentials
+- a verified live run against that config
+- end-to-end validation from plugin request to generated note output
 
 ## Verification Status
 
@@ -76,7 +86,14 @@ The runtime path is present, but it still needs real end-to-end configuration an
   - passed
 - `server\\.venv\\Scripts\\python.exe -m pytest server\\tests -q`
   - passed
-  - result: `4 passed`
+  - result: `6 passed`
+
+Python-side verified coverage now includes:
+
+- schema validation
+- runtime result normalization
+- `POST /api/v1/invoke` success path with mocked runtime output
+- `POST /api/v1/invoke` invalid-output handling with mocked runtime output
 
 ### Blocked by local environment
 
@@ -91,15 +108,27 @@ These failures are environment-level process launch issues, not currently known 
 
 High-priority next steps:
 
-1. make `server/runtime/nanobot_adapter.py` work with a real Nanobot config and live invocation
-2. verify `POST /api/v1/invoke` end to end using the local server
-3. finish plugin-to-server integration under real runtime output
-4. resolve the local Node `spawn EPERM` issue so plugin build and test commands can run normally
+1. create a real local Nanobot config from `server/nanobot.config.example.json`
+2. run the local server against a real provider and verify `POST /api/v1/invoke` end to end
+3. confirm the runtime returns parseable JSON with `filename` and `markdown`
+4. finish plugin-to-server integration under real runtime output
+5. resolve the local Node `spawn EPERM` issue so plugin build and test commands can run normally
+
+## Practical Next Session
+
+The most useful next development session should focus on live integration rather than more scaffolding:
+
+1. prepare a working Nanobot config file with one provider and one model
+2. start the FastAPI server locally
+3. send a real request to `/api/v1/invoke`
+4. inspect and, if needed, tighten `server/result_normalizer.py`
+5. connect the Obsidian plugin to the live server and validate note creation behavior
 
 ## Current Baseline Commit
 
 Main implementation baseline:
 
 - `8fc8a73` - `feat: scaffold plugin and nanobot-backed server`
+- `e1ad777` - `test: add server api coverage and sample config`
 
 This status document is intended to mark the next handoff point after that baseline.
