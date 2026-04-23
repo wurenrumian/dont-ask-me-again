@@ -281,6 +281,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
     includeQuoteAnchor: boolean
   ): void {
     this.activeContext = context;
+    this.floatingBox.setHost(context?.view.containerEl ?? null);
     this.floatingBox.setContextFile(context?.file.path ?? "");
 
     const selected = Boolean(context && hasSelection(context.selection));
@@ -466,9 +467,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
     const horizontalPadding = 24;
     const maxAllowedWidth = Math.max(260, rect.width - horizontalPadding * 2);
     const width = Math.min(Math.max(rect.width * 0.82, 260), maxAllowedWidth);
-    const left = rect.left + (rect.width - width) / 2;
-
-    this.floatingBox.setDockLayout(left, width);
+    this.floatingBox.setDockLayout(width);
   }
 
   private getActiveMarkdownTabRect(): DOMRect | null {

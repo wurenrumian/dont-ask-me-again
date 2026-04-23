@@ -24,6 +24,7 @@ export class FloatingBox {
   private selectionIconBtnEl: HTMLButtonElement | null = null;
   private templateMenuEl: HTMLDivElement | null = null;
   private menuCloseTimer: number | null = null;
+  private hostEl: HTMLElement | null = null;
   private mounted = false;
   private selectionActive = false;
   private busy = false;
@@ -91,7 +92,7 @@ export class FloatingBox {
     inputRowEl.append(this.inputEl);
 
     this.rootEl.append(this.contextEl, inputRowEl, this.thinkingEl, this.answerEl, this.errorEl);
-    document.body.appendChild(this.rootEl);
+    this.getMountRoot().appendChild(this.rootEl);
     document.body.appendChild(this.selectionActionEl);
 
     this.applyMode();
@@ -117,6 +118,8 @@ export class FloatingBox {
       this.menuCloseTimer = null;
     }
     this.mounted = false;
+    this.clearHostClass();
+    this.hostEl = null;
   }
 
   isVisible(): boolean {
@@ -210,14 +213,31 @@ export class FloatingBox {
     }
   }
 
-  setDockLayout(leftPx: number, widthPx: number): void {
+  setDockLayout(widthPx: number): void {
     if (!this.rootEl) {
       return;
     }
 
-    this.rootEl.style.left = `${leftPx}px`;
     this.rootEl.style.width = `${widthPx}px`;
-    this.rootEl.style.transform = "none";
+  }
+
+  setHost(hostEl: HTMLElement | null): void {
+    const nextHost = hostEl ?? null;
+    if (this.hostEl === nextHost) {
+      return;
+    }
+
+    this.clearHostClass();
+    this.hostEl = nextHost;
+    if (this.hostEl) {
+      this.hostEl.classList.add("dama-floating-host");
+    }
+
+    if (!this.rootEl) {
+      return;
+    }
+
+    this.getMountRoot().appendChild(this.rootEl);
   }
 
   setQuoteAnchor(leftPx: number, topPx: number): void {
@@ -301,5 +321,13 @@ export class FloatingBox {
     this.clearInput();
     this.focusInput();
     await this.options.onSubmit({ instruction });
+  }
+
+  private getMountRoot(): HTMLElement {
+    return this.hostEl ?? document.body;
+  }
+
+  private clearHostClass(): void {
+    this.hostEl?.classList.remove("dama-floating-host");
   }
 }
