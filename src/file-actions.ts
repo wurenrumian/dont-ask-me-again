@@ -1,7 +1,92 @@
 import { App, Editor, TFile, normalizePath } from "obsidian";
+import type { EditorPosition } from "obsidian";
 
 function sanitizeFileStem(filename: string): string {
   return filename.replace(/[\\/:*?"<>|]/g, "-").trim();
+}
+
+export function extractLeadingH1Title(markdown: string): string | null {
+  const lines = markdown.split(/\r?\n/);
+  const firstNonEmpty = lines.find((line) => line.trim().length > 0);
+  if (!firstNonEmpty) {
+    return null;
+  }
+
+  const match = firstNonEmpty.trim().match(/^#\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const title = match[1].trim();
+  return title.length > 0 ? title : null;
+}
+
+export function extractLeadingH1TitleFromCompletedLine(markdown: string): string | null {
+  const match = markdown.match(/^\s*#\s+([^\n]+)\n/);
+  if (!match) {
+    return null;
+  }
+  const title = match[1].trim();
+  return title.length > 0 ? title : null;
+}
+
+export function buildWrappedSourceLink(filename: string): string {
+  const stem = buildResolvedMarkdownPath(filename).replace(/\.md$/i, "");
+  return `([[${stem}]])`;
+}
+
+export function pickPrimaryAnswer(answer: string, thinking: string): string {
+  if (answer.trim().length > 0) {
+    return answer;
+  }
+  return thinking.trim().length > 0 ? thinking : answer;
+}
+
+function offsetAtPosition(content: string, position: EditorPosition): number | null {
+  if (position.line < 0 || position.ch < 0) {
+    return null;
+  }
+
+  let line = 0;
+  let ch = 0;
+  for (let i = 0; i < content.length; i += 1) {
+    if (line === position.line && ch === position.ch) {
+      return i;
+    }
+
+    const current = content[i];
+    if (current === "\r") {
+      if (content[i + 1] === "\n") {
+        i += 1;
+      }
+      line += 1;
+      ch = 0;
+      continue;
+    }
+    if (current === "\n") {
+      line += 1;
+      ch = 0;
+      continue;
+    }
+    ch += 1;
+  }
+
+  if (line === position.line && ch === position.ch) {
+    return content.length;
+  }
+  return null;
+}
+
+export function insertTextAtPosition(
+  content: string,
+  position: EditorPosition,
+  insertion: string
+): string {
+  const offset = offsetAtPosition(content, position);
+  if (offset === null) {
+    return content;
+  }
+  return `${content.slice(0, offset)}${insertion}${content.slice(offset)}`;
 }
 
 function moveCursorToEnd(editor: Editor): { lastLineText: string } {
@@ -179,7 +264,7 @@ export function appendUserAndThinkingDraft(
   const prefix = lastLineText.length > 0 ? "\n\n" : "";
   const payload = buildDraftBlock(
     instruction,
-    `<span style="opacity:0.55;">Streaming Reasoning...</span>`
+    `<span style="opacity:0.55;">Streaming Reasoning...</span>\n\n`
   );
   editor.replaceSelection(`${prefix}${payload}`);
   return payload;

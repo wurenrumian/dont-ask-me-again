@@ -10,7 +10,13 @@ import {
 import { buildToolRequest, invokeToolStream } from "./api-client";
 import {
   appendUserAndThinkingDraft,
+  buildWrappedSourceLink,
+  extractLeadingH1Title,
+  extractLeadingH1TitleFromCompletedLine,
+  insertTextAtPosition,
+  pickPrimaryAnswer,
   finalizeThinkingDraft,
+  resolveUniqueMarkdownPath,
   updateAnswerDraft,
   updateThinkingDraft
 } from "./file-actions";
@@ -56,11 +62,10 @@ interface DraftRef {
   value: string;
 }
 
-const EMPTY_SELECTION: CachedSelection = {
-  text: "",
-  from: null,
-  to: null
-};
+interface SelectionActionContext {
+  source: ActiveEditorContext;
+  target: ActiveEditorContext;
+}
 
 export default class DontAskMeAgainPlugin extends Plugin {
   settings!: DontAskMeAgainSettings;
@@ -251,8 +256,10 @@ export default class DontAskMeAgainPlugin extends Plugin {
     return {
       templates: this.settings.defaultTemplates,
       mode: this.settings.selectionUiMode,
-      onSubmit: async ({ instruction }) => this.handleSubmit(instruction),
-      onQuoteSelection: () => this.quoteCurrentSelection()
+      onSubmit: async ({ instruction }) => {
+        await this.handleSubmit(instruction);
+      },
+      onTemplateFromSelection: async (template) => this.handleTemplateFromSelection(template)
     };
   }
 
@@ -280,7 +287,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
     this.floatingBox.setSelectionActive(selected);
 
     if (includeQuoteAnchor && selected) {
-      const anchor = this.getSelectionQuoteAnchor();
+      const anchor = this.getSelectionActionAnchor();
       if (anchor) {
         this.floatingBox.setQuoteAnchor(anchor.left, anchor.top);
       }
@@ -292,6 +299,126 @@ export default class DontAskMeAgainPlugin extends Plugin {
   private applyTemplateToInput(template: string): void {
     this.floatingBox.setInputValue(template);
     this.showFloatingBox(true);
+  }
+
+  private buildSelectionTemplateInstruction(template: string): string {
+    return [
+      template.trim(),
+      "",
+      "请基于我在源笔记里选中的文本生成一个新笔记。",
+      "回答必须从第一行开始就是一级标题（格式：# 标题）。",
+      "这个标题会被用作新笔记文件名。",
+      "标题后继续输出完整的 Markdown 正文内容。"
+    ].join("\n");
+  }
+
+  private async createAndSwitchToUntitledNote(): Promise<ActiveEditorContext | null> {
+    const path = await resolveUniqueMarkdownPath(this.app, "untitled");
+    const created = await this.app.vault.create(path, "");
+    const leaf = this.app.workspace.getMostRecentLeaf() ?? this.app.workspace.getLeaf(false);
+    await leaf.openFile(created);
+    this.app.workspace.setActiveLeaf(leaf, true, true);
+    return this.captureActiveContext();
+  }
+
+  private async insertWrappedLinkAfterSelectionInSourceFile(
+    context: ActiveEditorContext,
+    filename: string
+  ): Promise<void> {
+    const insertion = buildWrappedSourceLink(filename);
+    const anchor = context.selection.to ?? context.selection.from;
+    if (!anchor) {
+      return;
+    }
+
+    await this.app.vault.process(context.file, (content) => {
+      return insertTextAtPosition(content, anchor, insertion);
+    });
+  }
+
+  private async renameNoteByTitle(
+    context: ActiveEditorContext,
+    title: string
+  ): Promise<string> {
+    const nextPath = await resolveUniqueMarkdownPath(this.app, title);
+    if (nextPath !== context.file.path) {
+      await this.app.fileManager.renameFile(context.file, nextPath);
+    }
+    return nextPath.replace(/\.md$/i, "");
+  }
+
+  private async renameNoteFromAnswer(
+    context: ActiveEditorContext,
+    answer: string
+  ): Promise<string | null> {
+    const title = extractLeadingH1Title(answer);
+    if (!title) {
+      return null;
+    }
+    return this.renameNoteByTitle(context, title);
+  }
+
+  private async handleTemplateFromSelection(template: string): Promise<void> {
+    const source = this.captureActiveContext();
+    if (!source || !hasSelection(source.selection)) {
+      new Notice("Select text first.");
+      return;
+    }
+
+    this.syncFloatingBoxFromContext(source, false);
+
+    try {
+      const target = await this.createAndSwitchToUntitledNote();
+      if (!target) {
+        new Notice("Failed to open untitled note.");
+        return;
+      }
+
+      const selectionContext: SelectionActionContext = { source, target };
+      const instruction = this.buildSelectionTemplateInstruction(template);
+      let resolvedStem: string | null = null;
+      let linkInserted = false;
+      const answer = await this.handleSubmit(instruction, {
+        context: selectionContext.target,
+        selectionTextOverride: selectionContext.source.selection.text,
+        onAnswerProgress: async (partialAnswer) => {
+          if (resolvedStem && linkInserted) {
+            return;
+          }
+          const earlyTitle = extractLeadingH1TitleFromCompletedLine(partialAnswer);
+          if (!earlyTitle) {
+            return;
+          }
+          if (!resolvedStem) {
+            resolvedStem = await this.renameNoteByTitle(selectionContext.target, earlyTitle);
+          }
+          if (!linkInserted) {
+            await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, resolvedStem);
+            linkInserted = true;
+          }
+        }
+      });
+      if (answer === null) {
+        return;
+      }
+
+      const finalMarkdown = answer.endsWith("\n") ? answer : `${answer}\n`;
+      selectionContext.target.editor.setValue(finalMarkdown);
+      selectionContext.target.editor.setCursor({ line: 0, ch: 0 });
+
+      const renamedStem = resolvedStem ?? await this.renameNoteFromAnswer(selectionContext.target, answer);
+      if (!renamedStem) {
+        new Notice("No leading # title found, keeping untitled note name.");
+        return;
+      }
+
+      if (!linkInserted) {
+        await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, renamedStem);
+      }
+      new Notice(`Linked source to (${renamedStem}).`);
+    } finally {
+      this.showFloatingBox(true);
+    }
   }
 
   private captureActiveContext(): ActiveEditorContext | null {
@@ -358,11 +485,18 @@ export default class DontAskMeAgainPlugin extends Plugin {
     return rect;
   }
 
-  private async handleSubmit(instruction: string): Promise<void> {
-    const context = this.activeContext ?? this.captureActiveContext();
+  private async handleSubmit(
+    instruction: string,
+    options?: {
+      context?: ActiveEditorContext;
+      selectionTextOverride?: string;
+      onAnswerProgress?: (answer: string) => Promise<void> | void;
+    }
+  ): Promise<string | null> {
+    const context = options?.context ?? this.activeContext ?? this.captureActiveContext();
     if (!context) {
       new Notice("No active markdown editor.");
-      return;
+      return null;
     }
 
     this.activeContext = context;
@@ -382,7 +516,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
         {
           activeFilePath: context.file.path,
           activeFileContent: fileContent,
-          selectionText: context.selection.text,
+          selectionText: options?.selectionTextOverride ?? context.selection.text,
           instruction
         }
       );
@@ -409,11 +543,17 @@ export default class DontAskMeAgainPlugin extends Plugin {
         }
         if (event.type === "thinking_delta") {
           thinking += event.text;
+          if (options?.onAnswerProgress && answer.trim().length === 0) {
+            void options.onAnswerProgress(thinking);
+          }
           this.enqueueThinking(renderState, event.text, context, draftRef);
           return;
         }
         if (event.type === "answer_delta") {
           answer += event.text;
+          if (options?.onAnswerProgress) {
+            void options.onAnswerProgress(answer);
+          }
           this.enqueueAnswer(renderState, event.text, context, draftRef);
           return;
         }
@@ -443,13 +583,16 @@ export default class DontAskMeAgainPlugin extends Plugin {
         throw currentStreamError;
       }
 
-      draftRef.value = updateAnswerDraft(context.editor, draftRef.value, instruction, answer);
-      finalizeThinkingDraft(context.editor, draftRef.value, instruction, answer);
+      const primaryAnswer = pickPrimaryAnswer(answer, thinking);
+      draftRef.value = updateAnswerDraft(context.editor, draftRef.value, instruction, primaryAnswer);
+      finalizeThinkingDraft(context.editor, draftRef.value, instruction, primaryAnswer);
       this.scrollContextToBottom(context);
+      return primaryAnswer;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown request failure.";
       this.floatingBox.setError(message);
       new Notice(message);
+      return null;
     } finally {
       this.floatingBox.setBusy(false);
     }
@@ -562,7 +705,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
     });
   }
 
-  private getSelectionQuoteAnchor(): { left: number; top: number } | null {
+  private getSelectionActionAnchor(): { left: number; top: number } | null {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
       return null;
@@ -576,32 +719,13 @@ export default class DontAskMeAgainPlugin extends Plugin {
     const margin = 8;
     const left = Math.min(
       Math.max(rect.right + margin, margin),
-      window.innerWidth - 140
+      window.innerWidth - 240
     );
     const top = Math.min(
       Math.max(rect.bottom + margin, margin),
       window.innerHeight - 40
     );
     return { left, top };
-  }
-
-  private quoteCurrentSelection(): void {
-    const context = this.captureActiveContext();
-    if (!context || !hasSelection(context.selection)) {
-      new Notice("Select text first.");
-      return;
-    }
-
-    const alias = context.selection.text.trim();
-    const placeholder = `[[${alias}|${alias}]]`;
-
-    context.editor.replaceSelection(placeholder);
-    this.activeContext = {
-      ...context,
-      selection: EMPTY_SELECTION
-    };
-
-    this.showFloatingBox(true);
   }
 
   private scrollContextToBottom(context: ActiveEditorContext): void {

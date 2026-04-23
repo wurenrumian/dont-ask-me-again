@@ -10,7 +10,7 @@ export interface FloatingBoxOptions {
   templates: string[];
   mode: SelectionUiMode;
   onSubmit: (payload: FloatingSubmitPayload) => Promise<void>;
-  onQuoteSelection: () => void;
+  onTemplateFromSelection: (template: string) => Promise<void>;
 }
 
 export class FloatingBox {
@@ -20,7 +20,10 @@ export class FloatingBox {
   private contextEl: HTMLDivElement | null = null;
   private thinkingEl: HTMLPreElement | null = null;
   private answerEl: HTMLPreElement | null = null;
-  private quoteBtnEl: HTMLButtonElement | null = null;
+  private selectionActionEl: HTMLDivElement | null = null;
+  private selectionIconBtnEl: HTMLButtonElement | null = null;
+  private templateMenuEl: HTMLDivElement | null = null;
+  private menuCloseTimer: number | null = null;
   private mounted = false;
   private selectionActive = false;
   private busy = false;
@@ -62,12 +65,25 @@ export class FloatingBox {
     this.answerEl = document.createElement("pre");
     this.answerEl.className = "dama-floating-answer dama-hidden";
 
-    this.quoteBtnEl = document.createElement("button");
-    this.quoteBtnEl.className = "dama-quote-btn dama-hidden";
-    this.quoteBtnEl.type = "button";
-    this.quoteBtnEl.textContent = "Quote Selection";
-    this.quoteBtnEl.addEventListener("click", () => {
-      this.options.onQuoteSelection();
+    this.selectionActionEl = document.createElement("div");
+    this.selectionActionEl.className = "dama-selection-action dama-hidden";
+
+    this.selectionIconBtnEl = document.createElement("button");
+    this.selectionIconBtnEl.className = "dama-selection-icon";
+    this.selectionIconBtnEl.type = "button";
+    this.selectionIconBtnEl.textContent = "⚡";
+    this.selectionIconBtnEl.setAttribute("aria-label", "Selection actions");
+
+    this.templateMenuEl = document.createElement("div");
+    this.templateMenuEl.className = "dama-selection-template-menu";
+    this.renderTemplateMenu();
+
+    this.selectionActionEl.append(this.selectionIconBtnEl, this.templateMenuEl);
+    this.selectionActionEl.addEventListener("mouseenter", () => {
+      this.openTemplateMenu();
+    });
+    this.selectionActionEl.addEventListener("mouseleave", () => {
+      this.scheduleCloseTemplateMenu();
     });
 
     const inputRowEl = document.createElement("div");
@@ -76,7 +92,7 @@ export class FloatingBox {
 
     this.rootEl.append(this.contextEl, inputRowEl, this.thinkingEl, this.answerEl, this.errorEl);
     document.body.appendChild(this.rootEl);
-    document.body.appendChild(this.quoteBtnEl);
+    document.body.appendChild(this.selectionActionEl);
 
     this.applyMode();
     this.mounted = true;
@@ -86,14 +102,20 @@ export class FloatingBox {
 
   destroy(): void {
     this.rootEl?.remove();
-    this.quoteBtnEl?.remove();
+    this.selectionActionEl?.remove();
     this.rootEl = null;
     this.inputEl = null;
     this.errorEl = null;
     this.contextEl = null;
     this.thinkingEl = null;
     this.answerEl = null;
-    this.quoteBtnEl = null;
+    this.selectionActionEl = null;
+    this.selectionIconBtnEl = null;
+    this.templateMenuEl = null;
+    if (this.menuCloseTimer !== null) {
+      window.clearTimeout(this.menuCloseTimer);
+      this.menuCloseTimer = null;
+    }
     this.mounted = false;
   }
 
@@ -183,8 +205,8 @@ export class FloatingBox {
     if (this.rootEl) {
       this.rootEl.dataset.selectionActive = active ? "true" : "false";
     }
-    if (this.quoteBtnEl) {
-      this.quoteBtnEl.classList.toggle("dama-hidden", !active);
+    if (this.selectionActionEl) {
+      this.selectionActionEl.classList.toggle("dama-hidden", !active);
     }
   }
 
@@ -199,17 +221,18 @@ export class FloatingBox {
   }
 
   setQuoteAnchor(leftPx: number, topPx: number): void {
-    if (!this.quoteBtnEl) {
+    if (!this.selectionActionEl) {
       return;
     }
 
-    this.quoteBtnEl.style.left = `${leftPx}px`;
-    this.quoteBtnEl.style.top = `${topPx}px`;
+    this.selectionActionEl.style.left = `${leftPx}px`;
+    this.selectionActionEl.style.top = `${topPx}px`;
   }
 
   updateOptions(options: FloatingBoxOptions): void {
     this.options = options;
     this.applyMode();
+    this.renderTemplateMenu();
   }
 
   private applyMode(): void {
@@ -218,6 +241,50 @@ export class FloatingBox {
     }
 
     this.rootEl.dataset.mode = this.options.mode;
+  }
+
+  private renderTemplateMenu(): void {
+    if (!this.templateMenuEl) {
+      return;
+    }
+
+    this.templateMenuEl.textContent = "";
+    if (this.options.templates.length === 0) {
+      const emptyEl = document.createElement("div");
+      emptyEl.className = "dama-template-empty";
+      emptyEl.textContent = "No templates configured.";
+      this.templateMenuEl.appendChild(emptyEl);
+      return;
+    }
+
+    this.options.templates.forEach((template) => {
+      const btn = document.createElement("button");
+      btn.className = "dama-template-item";
+      btn.type = "button";
+      btn.textContent = template;
+      btn.addEventListener("click", () => {
+        void this.options.onTemplateFromSelection(template);
+      });
+      this.templateMenuEl?.appendChild(btn);
+    });
+  }
+
+  private openTemplateMenu(): void {
+    if (this.menuCloseTimer !== null) {
+      window.clearTimeout(this.menuCloseTimer);
+      this.menuCloseTimer = null;
+    }
+    this.selectionActionEl?.classList.add("dama-menu-open");
+  }
+
+  private scheduleCloseTemplateMenu(): void {
+    if (this.menuCloseTimer !== null) {
+      window.clearTimeout(this.menuCloseTimer);
+    }
+    this.menuCloseTimer = window.setTimeout(() => {
+      this.selectionActionEl?.classList.remove("dama-menu-open");
+      this.menuCloseTimer = null;
+    }, 120);
   }
 
   private async submit(): Promise<void> {
