@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildToolRequest, parseToolResponse } from "../api-client";
+import {
+  buildToolRequest,
+  parseProviderConfigResponse,
+  parseToolResponse
+} from "../src/api-client";
 
 describe("buildToolRequest", () => {
   it("builds the provider-agnostic plugin request shape", () => {
@@ -34,8 +38,8 @@ describe("parseToolResponse", () => {
       ok: true,
       result: {
         session_id: "session-1",
-        filename: "answer-note",
-        markdown: "# Answer"
+        thinking: "Let me analyze this.",
+        answer: "# Answer"
       },
       error: null
     });
@@ -45,19 +49,37 @@ describe("parseToolResponse", () => {
       throw new Error("Expected a success response.");
     }
 
-    expect(parsed.result.filename).toBe("answer-note");
+    expect(parsed.result.answer).toBe("# Answer");
   });
 
-  it("rejects a success response with no filename", () => {
+  it("rejects a success response with no answer", () => {
     expect(() =>
       parseToolResponse({
         ok: true,
         result: {
           session_id: "session-1",
-          markdown: "# Answer"
+          thinking: "..."
         },
         error: null
       })
     ).toThrow();
+  });
+});
+
+describe("parseProviderConfigResponse", () => {
+  it("accepts a valid provider config success payload", () => {
+    const parsed = parseProviderConfigResponse({
+      ok: true,
+      result: {
+        provider: "minimax",
+        model: "MiniMax-M2.7",
+        api_base: "https://api.minimaxi.com/v1",
+        api_key_env: "MINIMAX_API_KEY",
+        has_api_key: true
+      },
+      error: null
+    });
+
+    expect(parsed.ok).toBe(true);
   });
 });

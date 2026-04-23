@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSelectionAlias } from "../selection-context";
+import { buildSelectionAlias } from "../src/selection-context";
 
 describe("buildSelectionAlias", () => {
   it("uses the selected text as the wikilink alias", () => {

@@ -1,0 +1,355 @@
+import { requestUrl } from "obsidian";
+import { z } from "zod";
+
+export const toolRequestSchema = z.object({
+  request_id: z.string(),
+  session_id: z.string().nullable().optional(),
+  input: z.object({
+    active_file_path: z.string(),
+    active_file_content: z.string(),
+    selection_text: z.string(),
+    instruction: z.string()
+  }),
+  client: z.object({
+    name: z.string(),
+    version: z.string()
+  })
+});
+
+const toolSuccessSchema = z.object({
+  ok: z.literal(true),
+  result: z.object({
+    session_id: z.string(),
+    thinking: z.string(),
+    answer: z.string()
+  }),
+  error: z.null()
+});
+
+const toolErrorSchema = z.object({
+  ok: z.literal(false),
+  result: z.null(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    retryable: z.boolean()
+  })
+});
+
+export const toolResponseSchema = z.union([toolSuccessSchema, toolErrorSchema]);
+export const providerNameSchema = z.enum([
+  "openrouter",
+  "openai",
+  "anthropic",
+  "gemini",
+  "deepseek",
+  "minimax",
+  "custom",
+  "azure_openai",
+  "ollama"
+]);
+
+export const providerConfigRequestSchema = z.object({
+  provider: providerNameSchema,
+  model: z.string().min(1),
+  api_base: z.string().trim().optional().nullable(),
+  api_key: z.string().optional().nullable()
+});
+
+const providerConfigSuccessSchema = z.object({
+  ok: z.literal(true),
+  result: z.object({
+    provider: providerNameSchema,
+    model: z.string(),
+    api_base: z.string().nullable(),
+    api_key_env: z.string().nullable(),
+    has_api_key: z.boolean()
+  }),
+  error: z.null()
+});
+
+const providerConfigErrorSchema = z.object({
+  ok: z.literal(false),
+  result: z.null(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    retryable: z.boolean()
+  })
+});
+
+export const providerConfigResponseSchema = z.union([
+  providerConfigSuccessSchema,
+  providerConfigErrorSchema
+]);
+
+// --- Model-Provider Configuration Schemas ---
+
+export const modelProviderEntrySchema = z.object({
+  id: z.string().min(1),
+  provider: providerNameSchema,
+  model: z.string().min(1),
+  api_base: z.string().nullable().optional(),
+  api_key_env: z.string().nullable().optional(),
+  is_default: z.boolean(),
+  label: z.string().nullable().optional()
+});
+
+export const modelProviderListResponseSchema = z.object({
+  ok: z.literal(true),
+  entries: z.array(modelProviderEntrySchema),
+  default_id: z.string().nullable()
+});
+
+export const modelProviderSaveRequestSchema = z.object({
+  id: z.string().nullable().optional(),
+  provider: providerNameSchema,
+  model: z.string().min(1),
+  api_base: z.string().nullable().optional(),
+  api_key: z.string().nullable().optional(),
+  is_default: z.boolean().default(false),
+  label: z.string().nullable().optional()
+});
+
+const modelProviderSaveSuccessSchema = z.object({
+  ok: z.literal(true),
+  entry: modelProviderEntrySchema,
+  api_key_env: z.string().nullable(),
+  api_key_stored: z.boolean()
+});
+
+const modelProviderSaveErrorSchema = z.object({
+  ok: z.literal(false),
+  result: z.null(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    retryable: z.boolean()
+  })
+});
+
+export const modelProviderSaveResponseSchema = z.union([
+  modelProviderSaveSuccessSchema,
+  modelProviderSaveErrorSchema
+]);
+
+export const modelProviderDeleteRequestSchema = z.object({
+  id: z.string().min(1)
+});
+
+export const modelProviderDeleteResponseSchema = z.object({
+  ok: z.literal(true)
+});
+
+export type ToolResponse = z.infer<typeof toolResponseSchema>;
+export type ProviderName = z.infer<typeof providerNameSchema>;
+export type ProviderConfigResponse = z.infer<typeof providerConfigResponseSchema>;
+export type ModelProviderEntry = z.infer<typeof modelProviderEntrySchema>;
+export type ModelProviderListResponse = z.infer<typeof modelProviderListResponseSchema>;
+export type ModelProviderSaveRequest = z.infer<typeof modelProviderSaveRequestSchema>;
+export type ModelProviderSaveResponse = z.infer<typeof modelProviderSaveResponseSchema>;
+
+export interface ToolCallArguments {
+  activeFilePath: string;
+  activeFileContent: string;
+  selectionText: string;
+  instruction: string;
+}
+
+export type StreamEvent =
+  | { type: "session"; sessionId: string }
+  | { type: "thinking_delta"; text: string }
+  | { type: "answer_delta"; text: string }
+  | { type: "done" }
+  | {
+      type: "error";
+      error: { code: string; message: string; retryable: boolean };
+    };
+
+export function parseToolResponse(payload: unknown): ToolResponse {
+  return toolResponseSchema.parse(payload);
+}
+
+export function parseProviderConfigResponse(payload: unknown): ProviderConfigResponse {
+  return providerConfigResponseSchema.parse(payload);
+}
+
+export function parseModelProviderListResponse(payload: unknown): ModelProviderListResponse {
+  return modelProviderListResponseSchema.parse(payload);
+}
+
+export function parseModelProviderSaveResponse(payload: unknown): ModelProviderSaveResponse {
+  return modelProviderSaveResponseSchema.parse(payload);
+}
+
+export function buildToolRequest(
+  requestId: string,
+  sessionId: string | null,
+  args: ToolCallArguments
+) {
+  return toolRequestSchema.parse({
+    request_id: requestId,
+    session_id: sessionId,
+    input: {
+      active_file_path: args.activeFilePath,
+      active_file_content: args.activeFileContent,
+      selection_text: args.selectionText,
+      instruction: args.instruction
+    },
+    client: {
+      name: "dont-ask-me-again",
+      version: "0.1.0"
+    }
+  });
+}
+
+export async function invokeTool(baseUrl: string, payload: unknown): Promise<ToolResponse> {
+  const response = await requestUrl({
+    url: `${baseUrl.replace(/\/$/, "")}/api/v1/invoke`,
+    method: "POST",
+    contentType: "application/json",
+    body: JSON.stringify(payload)
+  });
+
+  return parseToolResponse(response.json);
+}
+
+export async function invokeToolStream(
+  baseUrl: string,
+  payload: unknown,
+  onEvent: (event: StreamEvent) => void
+): Promise<void> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/v1/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let shouldStop = false;
+
+  const takeNextBlock = (): string | null => {
+    const match = buffer.match(/\r?\n\r?\n/);
+    if (!match || match.index === undefined) {
+      return null;
+    }
+    const block = buffer.slice(0, match.index);
+    buffer = buffer.slice(match.index + match[0].length);
+    return block;
+  };
+
+  const emitEvent = (eventName: string, dataLine: string): void => {
+    const data = dataLine ? JSON.parse(dataLine) : {};
+    if (eventName === "session") {
+      onEvent({ type: "session", sessionId: String(data.session_id ?? "") });
+    } else if (eventName === "thinking_delta") {
+      onEvent({ type: "thinking_delta", text: String(data.text ?? "") });
+    } else if (eventName === "answer_delta") {
+      onEvent({ type: "answer_delta", text: String(data.text ?? "") });
+    } else if (eventName === "done") {
+      onEvent({ type: "done" });
+      shouldStop = true;
+    } else if (eventName === "error") {
+      onEvent({
+        type: "error",
+        error: {
+          code: String(data.code ?? "INTERNAL"),
+          message: String(data.message ?? "Unknown stream error"),
+          retryable: Boolean(data.retryable)
+        }
+      });
+      shouldStop = true;
+    }
+  };
+
+  while (true) {
+    if (shouldStop) return;
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+
+    let block = takeNextBlock();
+    while (block !== null) {
+      const lines = block.split(/\r?\n/);
+      const eventLine = lines.find((line) => line.startsWith("event:"));
+      const dataLine = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("");
+      if (eventLine) {
+        emitEvent(eventLine.slice(6).trim(), dataLine);
+        if (shouldStop) {
+          return;
+        }
+      }
+      block = takeNextBlock();
+    }
+  }
+}
+
+export async function saveProviderConfig(
+  baseUrl: string,
+  payload: z.input<typeof providerConfigRequestSchema>
+): Promise<ProviderConfigResponse> {
+  const parsedPayload = providerConfigRequestSchema.parse(payload);
+  const response = await requestUrl({
+    url: `${baseUrl.replace(/\/$/, "")}/api/v1/provider-config`,
+    method: "POST",
+    contentType: "application/json",
+    body: JSON.stringify(parsedPayload)
+  });
+
+  return parseProviderConfigResponse(response.json);
+}
+
+// --- Model-Provider Configuration API ---
+
+export async function listModelProviders(
+  baseUrl: string
+): Promise<ModelProviderListResponse> {
+  const response = await requestUrl({
+    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
+    method: "GET"
+  });
+
+  return parseModelProviderListResponse(response.json);
+}
+
+export async function saveModelProvider(
+  baseUrl: string,
+  payload: z.input<typeof modelProviderSaveRequestSchema>
+): Promise<ModelProviderSaveResponse> {
+  const parsedPayload = modelProviderSaveRequestSchema.parse(payload);
+  const response = await requestUrl({
+    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
+    method: "POST",
+    contentType: "application/json",
+    body: JSON.stringify(parsedPayload)
+  });
+
+  return parseModelProviderSaveResponse(response.json);
+}
+
+export async function deleteModelProvider(
+  baseUrl: string,
+  id: string
+): Promise<z.infer<typeof modelProviderDeleteResponseSchema>> {
+  const parsedPayload = modelProviderDeleteRequestSchema.parse({ id });
+  const response = await requestUrl({
+    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
+    method: "DELETE",
+    contentType: "application/json",
+    body: JSON.stringify(parsedPayload)
+  });
+
+  return modelProviderDeleteResponseSchema.parse(response.json);
+}

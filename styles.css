@@ -1,15 +1,13 @@
 .dama-floating-box {
-  position: absolute;
+  position: fixed;
   z-index: 1000;
-  width: min(520px, calc(100vw - 32px));
-  padding: 14px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at top left, rgba(216, 205, 159, 0.18), transparent 36%),
-    linear-gradient(135deg, var(--background-primary), var(--background-secondary));
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(10px);
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .dama-hidden {
@@ -17,68 +15,69 @@
 }
 
 .dama-docked {
+  bottom: 14px;
+}
+
+.dama-quote-btn {
   position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
+  z-index: 1001;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.dama-near-selection {
-  transform: none;
-}
-
-.dama-floating-templates {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.dama-floating-box[data-mode="input-first"] .dama-floating-templates {
-  order: 2;
-  margin-top: 12px;
-  margin-bottom: 0;
+.dama-quote-btn:hover {
+  background: var(--background-modifier-hover);
 }
 
 .dama-floating-input-row {
   display: flex;
-  gap: 10px;
+  gap: 0;
   align-items: stretch;
+}
+
+.dama-floating-context {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .dama-floating-input {
   flex: 1;
   resize: vertical;
-  min-height: 86px;
-  padding: 10px 12px;
+  min-height: 56px;
+  padding: 8px 10px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 12px;
-  background: var(--background-primary-alt);
+  border-radius: 10px;
+  background: var(--background-primary);
   color: var(--text-normal);
   font: inherit;
 }
 
-.dama-floating-submit,
-.dama-template-button {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  background: var(--interactive-normal);
-  color: var(--text-normal);
-  cursor: pointer;
-}
-
-.dama-floating-submit {
-  min-width: 92px;
-  padding: 0 16px;
-}
-
-.dama-template-button {
-  padding: 8px 12px;
-}
-
 .dama-floating-error {
-  min-height: 1.2em;
-  margin-top: 10px;
+  min-height: 1em;
+  margin-top: 6px;
   color: var(--text-error);
-  font-size: 0.9em;
+  font-size: 0.85em;
+}
+
+.dama-floating-thinking,
+.dama-floating-answer {
+  margin: 6px 0 0 0;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
 }

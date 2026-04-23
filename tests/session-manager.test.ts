@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SessionManager } from "../session-manager";
+import { SessionManager } from "../src/session-manager";
 
 describe("SessionManager", () => {
   it("starts without an active session", () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildResolvedMarkdownPath,
   buildSourceReplacement
-} from "../file-actions";
+} from "../src/file-actions";
 
 describe("buildResolvedMarkdownPath", () => {
   it("adds the markdown extension when needed", () => {

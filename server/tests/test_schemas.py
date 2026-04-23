@@ -1,4 +1,4 @@
-from server.schemas import InvokeRequest, InvokeSuccessResponse
+from server.schemas import InvokeRequest, InvokeSuccessResponse, ProviderConfigRequest
 
 
 def test_request_accepts_expected_shape() -> None:
@@ -33,3 +33,16 @@ def test_success_response_requires_filename() -> None:
     )
 
     assert payload.result.filename == "entropy-answer"
+
+
+def test_provider_config_request_accepts_minimax_payload() -> None:
+    payload = ProviderConfigRequest.model_validate(
+        {
+            "provider": "minimax",
+            "model": "MiniMax-M2.7",
+            "api_base": "https://api.minimaxi.com/v1",
+            "api_key": "dummy",
+        }
+    )
+
+    assert payload.provider == "minimax"
