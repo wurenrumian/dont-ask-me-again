@@ -379,6 +379,28 @@ export default class DontAskMeAgainPlugin extends Plugin {
       const instruction = this.buildSelectionTemplateInstruction(template);
       let resolvedStem: string | null = null;
       let linkInserted = false;
+      let linkInsertPromise: Promise<void> | null = null;
+      const ensureLinkInsertedOnce = async (stem: string): Promise<void> => {
+        if (linkInserted) {
+          return;
+        }
+        if (linkInsertPromise) {
+          await linkInsertPromise;
+          return;
+        }
+
+        // Set insertion promise before awaiting to avoid duplicate inserts from concurrent callbacks.
+        linkInsertPromise = (async () => {
+          await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, stem);
+          linkInserted = true;
+        })();
+
+        try {
+          await linkInsertPromise;
+        } finally {
+          linkInsertPromise = null;
+        }
+      };
       const answer = await this.handleSubmit(instruction, {
         context: selectionContext.target,
         selectionTextOverride: selectionContext.source.selection.text,
@@ -393,10 +415,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
           if (!resolvedStem) {
             resolvedStem = await this.renameNoteByTitle(selectionContext.target, earlyTitle);
           }
-          if (!linkInserted) {
-            await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, resolvedStem);
-            linkInserted = true;
-          }
+          await ensureLinkInsertedOnce(resolvedStem);
         }
       });
       if (answer === null) {
@@ -413,8 +432,11 @@ export default class DontAskMeAgainPlugin extends Plugin {
         return;
       }
 
+      if (linkInsertPromise) {
+        await linkInsertPromise;
+      }
       if (!linkInserted) {
-        await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, renamedStem);
+        await ensureLinkInsertedOnce(renamedStem);
       }
       new Notice(`Linked source to (${renamedStem}).`);
     } finally {
