@@ -78,12 +78,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       await this.ensureServerRunning(false, { allowAutoStart: true });
     }
 
-    this.floatingBox = new FloatingBox(this, {
-      templates: this.settings.defaultTemplates,
-      mode: this.settings.selectionUiMode,
-      onSubmit: async ({ instruction }) => this.handleSubmit(instruction),
-      onQuoteSelection: () => this.quoteCurrentSelection()
-    });
+    this.floatingBox = new FloatingBox(this, this.buildFloatingBoxOptions());
     this.floatingBox.mount();
 
     this.addSettingTab(new DontAskMeAgainSettingTab(this.app, this));
@@ -109,12 +104,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.floatingBox.updateOptions({
-      templates: this.settings.defaultTemplates,
-      mode: this.settings.selectionUiMode,
-      onSubmit: async ({ instruction }) => this.handleSubmit(instruction),
-      onQuoteSelection: () => this.quoteCurrentSelection()
-    });
+    this.floatingBox.updateOptions(this.buildFloatingBoxOptions());
   }
 
   async ensureServerRunning(
@@ -157,17 +147,12 @@ export default class DontAskMeAgainPlugin extends Plugin {
       const menu = new Menu();
       menu.addItem((item) =>
         item.setTitle("New session").onClick(() => {
-          this.sessionManager.beginNewSession();
-          this.refreshStatusBar();
-          new Notice("Next request will create a new session.");
-          this.showFloatingBox(true);
+          this.startNewSession();
         })
       );
       menu.addItem((item) =>
         item.setTitle("Exit session").onClick(() => {
-          this.sessionManager.clearActiveSessionId();
-          this.refreshStatusBar();
-          new Notice("Session cleared.");
+          this.exitSession();
         })
       );
       menu.addItem((item) =>
@@ -199,10 +184,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       id: "new-session",
       name: "New Session",
       callback: () => {
-        this.sessionManager.beginNewSession();
-        this.refreshStatusBar();
-        new Notice("Next request will create a new session.");
-        this.showFloatingBox(true);
+        this.startNewSession();
       }
     });
 
@@ -210,9 +192,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       id: "exit-session",
       name: "Exit Session",
       callback: () => {
-        this.sessionManager.clearActiveSessionId();
-        this.refreshStatusBar();
-        new Notice("Session cleared.");
+        this.exitSession();
       }
     });
 
@@ -251,36 +231,62 @@ export default class DontAskMeAgainPlugin extends Plugin {
   private async syncSelectionUi(): Promise<void> {
     const context = this.captureActiveContext();
     if (!context) {
-      this.floatingBox.setSelectionActive(false);
+      this.syncFloatingBoxFromContext(null, false);
       return;
     }
-
-    this.activeContext = context;
-    this.floatingBox.setContextFile(context.file.path);
-    const selected = hasSelection(context.selection);
-    this.floatingBox.setSelectionActive(selected);
-    if (selected) {
-      const anchor = this.getSelectionQuoteAnchor();
-      if (anchor) {
-        this.floatingBox.setQuoteAnchor(anchor.left, anchor.top);
-      }
-    }
-    this.updateFloatingDockLayout();
+    this.syncFloatingBoxFromContext(context, true);
   }
 
   private showFloatingBox(focusInput = false): void {
     const context = this.captureActiveContext();
-    this.activeContext = context;
-    if (context) {
-      this.floatingBox.setContextFile(context.file.path);
-    }
-    this.floatingBox.setSelectionActive(Boolean(context && hasSelection(context.selection)));
-    this.updateFloatingDockLayout();
+    this.syncFloatingBoxFromContext(context, false);
     this.floatingBox.showDocked();
 
     if (focusInput) {
       this.floatingBox.focusInput();
     }
+  }
+
+  private buildFloatingBoxOptions(): ConstructorParameters<typeof FloatingBox>[1] {
+    return {
+      templates: this.settings.defaultTemplates,
+      mode: this.settings.selectionUiMode,
+      onSubmit: async ({ instruction }) => this.handleSubmit(instruction),
+      onQuoteSelection: () => this.quoteCurrentSelection()
+    };
+  }
+
+  private startNewSession(): void {
+    this.sessionManager.beginNewSession();
+    this.refreshStatusBar();
+    new Notice("Next request will create a new session.");
+    this.showFloatingBox(true);
+  }
+
+  private exitSession(): void {
+    this.sessionManager.clearActiveSessionId();
+    this.refreshStatusBar();
+    new Notice("Session cleared.");
+  }
+
+  private syncFloatingBoxFromContext(
+    context: ActiveEditorContext | null,
+    includeQuoteAnchor: boolean
+  ): void {
+    this.activeContext = context;
+    this.floatingBox.setContextFile(context?.file.path ?? "");
+
+    const selected = Boolean(context && hasSelection(context.selection));
+    this.floatingBox.setSelectionActive(selected);
+
+    if (includeQuoteAnchor && selected) {
+      const anchor = this.getSelectionQuoteAnchor();
+      if (anchor) {
+        this.floatingBox.setQuoteAnchor(anchor.left, anchor.top);
+      }
+    }
+
+    this.updateFloatingDockLayout();
   }
 
   private applyTemplateToInput(template: string): void {
@@ -427,13 +433,14 @@ export default class DontAskMeAgainPlugin extends Plugin {
       await this.waitForDrainWithTimeout(renderState);
 
       if (streamError) {
+        const currentStreamError = streamError as Error;
         finalizeThinkingDraft(
           context.editor,
           draftRef.value,
           instruction,
-          `请求失败：${streamError.message}`
+          `请求失败：${currentStreamError.message}`
         );
-        throw streamError;
+        throw currentStreamError;
       }
 
       draftRef.value = updateAnswerDraft(context.editor, draftRef.value, instruction, answer);

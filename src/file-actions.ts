@@ -4,6 +4,36 @@ function sanitizeFileStem(filename: string): string {
   return filename.replace(/[\\/:*?"<>|]/g, "-").trim();
 }
 
+function moveCursorToEnd(editor: Editor): { lastLineText: string } {
+  const lastLine = Math.max(0, editor.lastLine());
+  const lastLineText = editor.getLine(lastLine) ?? "";
+  editor.setCursor({
+    line: lastLine,
+    ch: lastLineText.length
+  });
+  return { lastLineText };
+}
+
+function buildDraftBlock(
+  instruction: string,
+  assistantContent: string
+): string {
+  return [
+    `\n---\n`,
+    `**我**: ${instruction.trim()}`,
+    "",
+    `**Assistant**: ${assistantContent}`
+  ].join("\n");
+}
+
+function escapeHtmlWithLineBreaks(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br/>");
+}
+
 export function buildResolvedMarkdownPath(filename: string): string {
   const stem = sanitizeFileStem(filename).replace(/\.md$/i, "") || "untitled";
   return `${stem}.md`;
@@ -90,12 +120,7 @@ export function appendSourceLinkAtEnd(
     undefined,
     ""
   );
-  const lastLine = Math.max(0, editor.lastLine());
-  const lastLineText = editor.getLine(lastLine) ?? "";
-  editor.setCursor({
-    line: lastLine,
-    ch: lastLineText.length
-  });
+  const { lastLineText } = moveCursorToEnd(editor);
   const prefix = lastLineText.length > 0 ? "\n\n" : "";
   editor.replaceSelection(`${prefix}${replacement}`);
 }
@@ -127,12 +152,7 @@ export function appendChatTurn(
   thinking: string,
   answer: string
 ): void {
-  const lastLine = Math.max(0, editor.lastLine());
-  const lastLineText = editor.getLine(lastLine) ?? "";
-  editor.setCursor({
-    line: lastLine,
-    ch: lastLineText.length
-  });
+  const { lastLineText } = moveCursorToEnd(editor);
 
   const parts = [
     "",
@@ -154,20 +174,13 @@ export function appendUserAndThinkingDraft(
   editor: Editor,
   instruction: string
 ): string {
-  const lastLine = Math.max(0, editor.lastLine());
-  const lastLineText = editor.getLine(lastLine) ?? "";
-  editor.setCursor({
-    line: lastLine,
-    ch: lastLineText.length
-  });
+  const { lastLineText } = moveCursorToEnd(editor);
 
   const prefix = lastLineText.length > 0 ? "\n\n" : "";
-  const payload = [
-    `---`,
-    `**我**: ${instruction.trim()}`,
-    "",
-    `**Assistant**: <span style="opacity:0.55;">Streaming Reasoning...</span>`
-  ].join("\n");
+  const payload = buildDraftBlock(
+    instruction,
+    `<span style="opacity:0.55;">Streaming Reasoning...</span>`
+  );
   editor.replaceSelection(`${prefix}${payload}`);
   return payload;
 }
@@ -178,17 +191,11 @@ export function updateThinkingDraft(
   instruction: string,
   thinking: string
 ): string {
-  const escaped = thinking
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br/>");
-  const nextBlock = [
-    `---`,
-    `**我**: ${instruction.trim()}`,
-    "",
-    `**Assistant**: <span style="opacity:0.55;white-space:pre-wrap;">${escaped || "Streaming Reasoning..."}</span>`
-  ].join("\n");
+  const escaped = escapeHtmlWithLineBreaks(thinking);
+  const nextBlock = buildDraftBlock(
+    instruction,
+    `<span style="opacity:0.55;white-space:pre-wrap;">${escaped || "Streaming Reasoning..."}</span>`
+  );
   replaceFirstOccurrence(editor, currentBlock, nextBlock);
   return nextBlock;
 }
@@ -199,12 +206,7 @@ export function finalizeThinkingDraft(
   instruction: string,
   answer: string
 ): void {
-  const nextBlock = [
-    `---`,
-    `**我**: ${instruction.trim()}`,
-    "",
-    `**Assistant**: ${answer || "(empty)"}`
-  ].join("\n");
+  const nextBlock = buildDraftBlock(instruction, answer || "(empty)");
   replaceFirstOccurrence(editor, currentBlock, nextBlock);
 }
 
@@ -214,12 +216,7 @@ export function updateAnswerDraft(
   instruction: string,
   answer: string
 ): string {
-  const nextBlock = [
-    `---`,
-    `**我**: ${instruction.trim()}`,
-    "",
-    `**Assistant**: ${answer || "..."}`
-  ].join("\n");
+  const nextBlock = buildDraftBlock(instruction, answer || "...");
   replaceFirstOccurrence(editor, currentBlock, nextBlock);
   return nextBlock;
 }

@@ -166,6 +166,32 @@ export type StreamEvent =
       error: { code: string; message: string; retryable: boolean };
     };
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, "");
+}
+
+function buildApiUrl(baseUrl: string, path: string): string {
+  return `${normalizeBaseUrl(baseUrl)}${path}`;
+}
+
+async function requestJson(
+  url: string,
+  method: "GET" | "POST" | "DELETE",
+  body?: unknown
+): Promise<unknown> {
+  const response = await requestUrl({
+    url,
+    method,
+    ...(body === undefined
+      ? {}
+      : {
+          contentType: "application/json",
+          body: JSON.stringify(body)
+        })
+  });
+  return response.json;
+}
+
 export function parseToolResponse(payload: unknown): ToolResponse {
   return toolResponseSchema.parse(payload);
 }
@@ -204,14 +230,8 @@ export function buildToolRequest(
 }
 
 export async function invokeTool(baseUrl: string, payload: unknown): Promise<ToolResponse> {
-  const response = await requestUrl({
-    url: `${baseUrl.replace(/\/$/, "")}/api/v1/invoke`,
-    method: "POST",
-    contentType: "application/json",
-    body: JSON.stringify(payload)
-  });
-
-  return parseToolResponse(response.json);
+  const json = await requestJson(buildApiUrl(baseUrl, "/api/v1/invoke"), "POST", payload);
+  return parseToolResponse(json);
 }
 
 export async function invokeToolStream(
@@ -219,7 +239,7 @@ export async function invokeToolStream(
   payload: unknown,
   onEvent: (event: StreamEvent) => void
 ): Promise<void> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/v1/chat/stream`, {
+  const response = await fetch(buildApiUrl(baseUrl, "/api/v1/chat/stream"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -301,14 +321,12 @@ export async function saveProviderConfig(
   payload: z.input<typeof providerConfigRequestSchema>
 ): Promise<ProviderConfigResponse> {
   const parsedPayload = providerConfigRequestSchema.parse(payload);
-  const response = await requestUrl({
-    url: `${baseUrl.replace(/\/$/, "")}/api/v1/provider-config`,
-    method: "POST",
-    contentType: "application/json",
-    body: JSON.stringify(parsedPayload)
-  });
-
-  return parseProviderConfigResponse(response.json);
+  const json = await requestJson(
+    buildApiUrl(baseUrl, "/api/v1/provider-config"),
+    "POST",
+    parsedPayload
+  );
+  return parseProviderConfigResponse(json);
 }
 
 // --- Model-Provider Configuration API ---
@@ -316,12 +334,8 @@ export async function saveProviderConfig(
 export async function listModelProviders(
   baseUrl: string
 ): Promise<ModelProviderListResponse> {
-  const response = await requestUrl({
-    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
-    method: "GET"
-  });
-
-  return parseModelProviderListResponse(response.json);
+  const json = await requestJson(buildApiUrl(baseUrl, "/api/v1/model-providers"), "GET");
+  return parseModelProviderListResponse(json);
 }
 
 export async function saveModelProvider(
@@ -329,14 +343,12 @@ export async function saveModelProvider(
   payload: z.input<typeof modelProviderSaveRequestSchema>
 ): Promise<ModelProviderSaveResponse> {
   const parsedPayload = modelProviderSaveRequestSchema.parse(payload);
-  const response = await requestUrl({
-    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
-    method: "POST",
-    contentType: "application/json",
-    body: JSON.stringify(parsedPayload)
-  });
-
-  return parseModelProviderSaveResponse(response.json);
+  const json = await requestJson(
+    buildApiUrl(baseUrl, "/api/v1/model-providers"),
+    "POST",
+    parsedPayload
+  );
+  return parseModelProviderSaveResponse(json);
 }
 
 export async function deleteModelProvider(
@@ -344,12 +356,10 @@ export async function deleteModelProvider(
   id: string
 ): Promise<z.infer<typeof modelProviderDeleteResponseSchema>> {
   const parsedPayload = modelProviderDeleteRequestSchema.parse({ id });
-  const response = await requestUrl({
-    url: `${baseUrl.replace(/\/$/, "")}/api/v1/model-providers`,
-    method: "DELETE",
-    contentType: "application/json",
-    body: JSON.stringify(parsedPayload)
-  });
-
-  return modelProviderDeleteResponseSchema.parse(response.json);
+  const json = await requestJson(
+    buildApiUrl(baseUrl, "/api/v1/model-providers"),
+    "DELETE",
+    parsedPayload
+  );
+  return modelProviderDeleteResponseSchema.parse(json);
 }

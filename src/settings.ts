@@ -105,11 +105,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
             this.plugin.settings.serverBaseUrl = value.trim();
             await this.plugin.saveSettings();
           });
-        text.inputEl.autocomplete = "off";
-        text.inputEl.spellcheck = false;
-        text.inputEl.setAttribute("autocapitalize", "off");
-        text.inputEl.setAttribute("autocorrect", "off");
-        text.inputEl.setAttribute("data-lpignore", "true");
+        this.configureHardenedInput(text.inputEl);
       });
 
     new Setting(containerEl)
@@ -170,9 +166,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       .setDesc("Add a new model/provider configuration.")
       .addButton((button) =>
         button.setButtonText("+ Add Model").setCta().onClick(async () => {
-          const serverReady = await this.plugin.ensureServerRunning(false);
+          const serverReady = await this.ensureServerReadyOrNotice(
+            "Server unavailable. Start local server first, then add model."
+          );
           if (!serverReady) {
-            new Notice("Server unavailable. Start local server first, then add model.");
             return;
           }
           this.startAddingNew();
@@ -189,6 +186,26 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
     // 加载现有配置
     this.loadModelProviders(sectionEl);
+  }
+
+  private configureHardenedInput(inputEl: HTMLInputElement): void {
+    inputEl.autocomplete = "off";
+    inputEl.spellcheck = false;
+    inputEl.setAttribute("autocapitalize", "off");
+    inputEl.setAttribute("autocorrect", "off");
+    inputEl.setAttribute("data-lpignore", "true");
+  }
+
+  private async ensureServerReadyOrNotice(
+    unavailableNotice: string,
+    options?: { allowAutoStart?: boolean }
+  ): Promise<boolean> {
+    const ready = await this.plugin.ensureServerRunning(false, options);
+    if (!ready) {
+      new Notice(unavailableNotice);
+      return false;
+    }
+    return true;
   }
 
   private async loadModelProviders(containerEl: HTMLElement): Promise<void> {
@@ -448,11 +465,8 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       text.setValue(this.formState.apiKey);
       text.setPlaceholder(existingEntry ? "(unchanged)" : "sk-...");
       text.inputEl.type = "password";
+      this.configureHardenedInput(text.inputEl);
       text.inputEl.autocomplete = "new-password";
-      text.inputEl.spellcheck = false;
-      text.inputEl.setAttribute("autocapitalize", "off");
-      text.inputEl.setAttribute("autocorrect", "off");
-      text.inputEl.setAttribute("data-lpignore", "true");
       text.onChange((value) => {
         this.formState.apiKey = value.trim();
       });
@@ -505,9 +519,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       };
 
       try {
-        const serverReady = await this.plugin.ensureServerRunning();
+        const serverReady = await this.ensureServerReadyOrNotice(
+          "Server unavailable. Please start local server first."
+        );
         if (!serverReady) {
-          new Notice("Server unavailable. Please start local server first.");
           return;
         }
 
@@ -542,9 +557,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
   private async deleteEntry(id: string): Promise<void> {
     try {
-      const serverReady = await this.plugin.ensureServerRunning();
+      const serverReady = await this.ensureServerReadyOrNotice(
+        "Server unavailable. Please start local server first."
+      );
       if (!serverReady) {
-        new Notice("Server unavailable. Please start local server first.");
         return;
       }
 
@@ -619,5 +635,6 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
   }
 }
