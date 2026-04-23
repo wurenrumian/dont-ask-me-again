@@ -1,28 +1,30 @@
 # Provider Config Guide
-Provider 配置指南
 
-This project does not lock you to OpenRouter. The server reads `server/nanobot.config.json`, and Nanobot decides which provider to use based on that file.
-本项目不限定只能使用 OpenRouter。服务端会读取 `server/nanobot.config.json`，并由 Nanobot 根据该文件选择 provider。
+This server reads `server/nanobot.config.json` and uses provider settings from that file.
 
-## How to use this guide
-## 如何使用本指南
+## Quick Flow
 
-1. Copy example config:
-1. 复制示例配置：
+1. Create runtime config:
 
 ```powershell
 Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 ```
 
-2. Pick one provider snippet below and replace the `providers` + `agents.defaults` parts.
-3. Put secrets in `.env` (repo root or `server/.env`) instead of hardcoding keys.
-2. 从下方选择一个 provider 片段，替换 `providers` + `agents.defaults` 部分。
-3. 密钥建议写入 `.env`（仓库根目录或 `server/.env`），不要硬编码到配置文件。
+2. Replace `providers` and `agents.defaults` sections with one of the examples below.
+3. Put secrets in `.env` (repo root or `server/.env`) instead of writing keys in JSON.
 
----
+## Environment Variable Reference
 
-## A) OpenRouter (recommended default)
-## A) OpenRouter（默认推荐）
+- OpenRouter: `OPENROUTER_API_KEY`
+- OpenAI: `OPENAI_API_KEY`
+- Anthropic: `ANTHROPIC_API_KEY`
+- Gemini: `GEMINI_API_KEY`
+- DeepSeek: `DEEPSEEK_API_KEY`
+- Generic proxy: `CUSTOM_API_KEY`
+- Azure OpenAI style: `AZURE_OPENAI_API_KEY`
+- MiniMax: `MINIMAX_API_KEY`
+
+## A) OpenRouter (default recommendation)
 
 ```json
 {
@@ -40,19 +42,7 @@ Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 }
 ```
 
-`.env`:
-
-```dotenv
-OPENROUTER_API_KEY=sk-or-v1-...
-```
-
----
-
-## B) Generic API gateway / proxy (OpenAI Chat Completions compatible)
-## B) 通用 API 网关 / 中转（OpenAI Chat Completions 兼容）
-
-Use `custom` when your endpoint is chat-completions compatible.
-如果你的网关是 chat-completions 兼容接口，使用 `custom`。
+## B) OpenAI-Compatible Gateway (`custom`)
 
 ```json
 {
@@ -71,22 +61,9 @@ Use `custom` when your endpoint is chat-completions compatible.
 }
 ```
 
-`.env`:
+If your gateway does not require auth, set `"apiKey": null`.
 
-```dotenv
-CUSTOM_API_KEY=your-key
-```
-
-If your local gateway does not require auth, set `"apiKey": null`.
-如果你的本地网关不需要鉴权，可设置 `"apiKey": null`。
-
----
-
-## C) Responses-compatible gateway / Azure OpenAI style
-## C) Responses 兼容网关 / Azure OpenAI 风格
-
-Use `azure_openai` when your endpoint expects Responses-style behavior.
-如果你的网关是 Responses 风格接口，使用 `azure_openai`。
+## C) Responses-Compatible / Azure Style (`azure_openai`)
 
 ```json
 {
@@ -106,16 +83,7 @@ Use `azure_openai` when your endpoint expects Responses-style behavior.
 }
 ```
 
-`.env`:
-
-```dotenv
-AZURE_OPENAI_API_KEY=...
-```
-
----
-
-## D) Common direct providers
-## D) 常见直连 providers
+## D) Direct Provider Examples
 
 ### OpenAI
 
@@ -189,10 +157,7 @@ AZURE_OPENAI_API_KEY=...
 }
 ```
 
----
-
-## E) Local models (Ollama)
-## E) 本地模型（Ollama）
+## E) Local Model via Ollama
 
 ```json
 {
@@ -211,13 +176,7 @@ AZURE_OPENAI_API_KEY=...
 }
 ```
 
----
-
-## F) MiniMax Token Plan / Coding Plan
-
-If you want to test with MiniMax Token Plan, use `provider: "minimax"`.
-
-如果你要用 MiniMax Token Plan 进行测试，使用 `provider: "minimax"`。
+## F) MiniMax
 
 ```json
 {
@@ -236,31 +195,15 @@ If you want to test with MiniMax Token Plan, use `provider: "minimax"`.
 }
 ```
 
-`.env`:
-
-```dotenv
-MINIMAX_API_KEY=your-minimax-key
-```
-
 Notes:
 
-- Mainland China token plan (minimaxi.com): keep `apiBase` as `https://api.minimaxi.com/v1`.
-- Overseas account (minimax.io): change `apiBase` to `https://api.minimax.io/v1`.
-- If you need thinking mode / `reasoningEffort`, switch to `provider: "minimax_anthropic"` and use Anthropic-compatible endpoint.
+- Mainland China token plan: `https://api.minimaxi.com/v1`
+- Overseas account: `https://api.minimax.io/v1`
+- For reasoning mode with Anthropic-compatible endpoint, use `provider: "minimax_anthropic"`
 
-说明：
+## Keep From Example Config
 
-- 中国大陆 token plan（minimaxi.com）：`apiBase` 使用 `https://api.minimaxi.com/v1`。
-- 海外账号（minimax.io）：将 `apiBase` 改为 `https://api.minimax.io/v1`。
-- 如果需要思考模式（`reasoningEffort`），改用 `provider: "minimax_anthropic"`（Anthropic 兼容端点）。
-
----
-
-## Keep these fields from example config
-## 建议保留的示例字段
-
-Keep these fields unless you intentionally want to change behavior:
-除非你明确需要改行为，否则建议保留以下字段：
+Unless you intentionally change behavior, keep:
 
 - `agents.defaults.workspace`
 - `agents.defaults.maxToolIterations`
@@ -269,10 +212,6 @@ Keep these fields unless you intentionally want to change behavior:
 - `tools.exec.enable`
 - `tools.restrictToWorkspace`
 
-## Reference
-## 参考文档
-
-For the full provider list and latest provider-specific options, see:
-完整 provider 列表和最新 provider 特定参数请参考：
+## More Provider Options
 
 - `vendor/nanobot/docs/configuration.md`

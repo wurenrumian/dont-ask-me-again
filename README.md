@@ -1,67 +1,83 @@
 # dont-ask-me-again
 
-Obsidian plugin + local Python server for tool-driven note generation and editing.
+Obsidian plugin + local FastAPI server for session-aware AI note generation.
+
+## Current Status
+
+- Plugin entry: `src/main.ts`
+- Local server entry: `server/app.py`
+- Default server URL: `http://127.0.0.1:8787`
+- Vendor submodule: `vendor/nanobot`
+- `vendor/nanobot/webui` has been removed in this repo to keep scope focused on Obsidian plugin + API server.
+
+## Environment Rules
+
+- Python virtual environment is managed with `uv`.
+- Node dependencies (`node_modules`) are managed with `pnpm`.
 
 ## Requirements
 
 - Node.js 18+
-- `pnpm` (for `node_modules`)
+- `pnpm` 10+
 - Python 3.11+
-- `uv` (for Python virtual environment management)
+- `uv`
 
-## Quick Start
+## Quick Start (Windows PowerShell)
 
-### 1) Install plugin dependencies (pnpm)
+1. Install Node dependencies:
 
 ```powershell
 pnpm install
 ```
 
-### 2) Prepare Python virtual environment (uv)
+2. Create Python venv and install server dependencies:
 
 ```powershell
 uv venv server/.venv
-server/.venv/Scripts/python.exe -m pip install --upgrade pip
 uv pip install --python server/.venv/Scripts/python.exe -r server/requirements.txt
 ```
 
-### 3) Prepare runtime config
+3. Prepare runtime config:
 
 ```powershell
 Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 ```
 
-Provider config examples: see [`server/provider-config-guide.md`](server/provider-config-guide.md)
-
-### 4) Configure environment variables
-
-Create `.env` in repo root (or `server/.env`) and set keys based on your provider:
+4. Configure provider secrets via `.env`:
 
 ```dotenv
-# Example: OpenRouter
+# .env (repo root) or server/.env
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-### 5) Run local server
+5. Start local API server:
 
 ```powershell
 server/.venv/Scripts/python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787
 ```
 
-### 6) Build plugin
+6. Build plugin:
 
 ```powershell
 pnpm run build
 ```
 
-For plugin development:
+## Development Commands
 
 ```powershell
 pnpm run dev
+pnpm run test
+pnpm run build
 ```
 
-## Notes
+## Configuration Docs
 
-- Python environment should be managed with `uv`.
-- JS/TS dependencies should be managed with `pnpm`.
-- Local secret files are git-ignored: `.env`, `server/.env`, `server/nanobot.config.json`.
+- Provider setup: [`server/provider-config-guide.md`](server/provider-config-guide.md)
+- Server operation: [`server/README.md`](server/README.md)
+
+## Git-Ignored Local Files
+
+- `.env`
+- `server/.env`
+- `server/nanobot.config.json`
+- `server/.venv`
