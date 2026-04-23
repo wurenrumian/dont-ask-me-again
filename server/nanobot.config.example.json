@@ -1,0 +1,24 @@
+{
+  "providers": {
+    "openrouter": {
+      "apiKey": "sk-or-v1-your-key"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "openai/gpt-4.1",
+      "workspace": "./.runtime/nanobot-workspace",
+      "maxToolIterations": 12,
+      "temperature": 0.1
+    }
+  },
+  "tools": {
+    "web": {
+      "enable": false
+    },
+    "exec": {
+      "enable": false
+    },
+    "restrictToWorkspace": true
+  }
+}
