@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildResolvedMarkdownPath,
-  buildSourceReplacement
+  buildSourceReplacement,
+  buildWrappedSourceLink,
+  extractLeadingH1Title,
+  extractLeadingH1TitleFromCompletedLine,
+  insertTextAtPosition,
+  pickPrimaryAnswer
 } from "../src/file-actions";
 
 describe("buildResolvedMarkdownPath", () => {
@@ -18,5 +23,45 @@ describe("buildSourceReplacement", () => {
 
   it("builds a plain wikilink when no selection exists", () => {
     expect(buildSourceReplacement("answer-note", "")).toBe("[[answer-note]]");
+  });
+});
+
+describe("extractLeadingH1Title", () => {
+  it("extracts title from the first non-empty line when it is a h1", () => {
+    expect(extractLeadingH1Title("\n# My Note\n\ncontent")).toBe("My Note");
+  });
+
+  it("returns null when first non-empty line is not a h1", () => {
+    expect(extractLeadingH1Title("## Subtitle\n# Later")).toBeNull();
+  });
+});
+
+describe("extractLeadingH1TitleFromCompletedLine", () => {
+  it("extracts title only when heading line is complete", () => {
+    expect(extractLeadingH1TitleFromCompletedLine("# T\nnext")).toBe("T");
+    expect(extractLeadingH1TitleFromCompletedLine("# T")).toBeNull();
+  });
+});
+
+describe("buildWrappedSourceLink", () => {
+  it("creates wrapped wikilink payload", () => {
+    expect(buildWrappedSourceLink("My Note")).toBe("([[My Note]])");
+  });
+});
+
+describe("insertTextAtPosition", () => {
+  it("inserts at a line/ch position", () => {
+    const content = "alpha\nbeta";
+    expect(insertTextAtPosition(content, { line: 0, ch: 5 }, "([[X]])")).toBe("alpha([[X]])\nbeta");
+  });
+});
+
+describe("pickPrimaryAnswer", () => {
+  it("prefers answer when answer exists", () => {
+    expect(pickPrimaryAnswer("A", "T")).toBe("A");
+  });
+
+  it("falls back to thinking when answer is empty", () => {
+    expect(pickPrimaryAnswer("   ", "# Title\nBody")).toBe("# Title\nBody");
   });
 });
