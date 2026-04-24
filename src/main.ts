@@ -382,8 +382,8 @@ export default class DontAskMeAgainPlugin extends Plugin {
     ].join("\n");
   }
 
-  private async createAndSwitchToUntitledNote(): Promise<ActiveEditorContext | null> {
-    const path = await resolveUniqueMarkdownPath(this.app, "untitled");
+  private async createAndSwitchToUntitledNote(directory: string): Promise<ActiveEditorContext | null> {
+    const path = await resolveUniqueMarkdownPath(this.app, "untitled", directory);
     const created = await this.app.vault.create(path, "");
     const leaf = this.app.workspace.getMostRecentLeaf() ?? this.app.workspace.getLeaf(false);
     await leaf.openFile(created);
@@ -408,9 +408,10 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   private async renameNoteByTitle(
     context: ActiveEditorContext,
-    title: string
+    title: string,
+    directory: string
   ): Promise<string> {
-    const nextPath = await resolveUniqueMarkdownPath(this.app, title);
+    const nextPath = await resolveUniqueMarkdownPath(this.app, title, directory);
     if (nextPath !== context.file.path) {
       await this.app.fileManager.renameFile(context.file, nextPath);
     }
@@ -419,13 +420,23 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   private async renameNoteFromAnswer(
     context: ActiveEditorContext,
-    answer: string
+    answer: string,
+    directory: string
   ): Promise<string | null> {
     const title = extractLeadingH1Title(answer);
     if (!title) {
       return null;
     }
-    return this.renameNoteByTitle(context, title);
+    return this.renameNoteByTitle(context, title, directory);
+  }
+
+  private getParentFolder(filePath: string): string {
+    const normalized = filePath.replace(/\\/g, "/");
+    const splitIndex = normalized.lastIndexOf("/");
+    if (splitIndex <= 0) {
+      return "";
+    }
+    return normalized.slice(0, splitIndex);
   }
 
   private async handleTemplateFromSelection(template: string): Promise<void> {
@@ -436,9 +447,10 @@ export default class DontAskMeAgainPlugin extends Plugin {
     }
 
     this.syncFloatingBoxFromContext(source, false);
+    const sourceFolder = this.getParentFolder(source.file.path);
 
     try {
-      const target = await this.createAndSwitchToUntitledNote();
+      const target = await this.createAndSwitchToUntitledNote(sourceFolder);
       if (!target) {
         new Notice("Failed to open untitled note.");
         return;
@@ -482,7 +494,11 @@ export default class DontAskMeAgainPlugin extends Plugin {
             return;
           }
           if (!resolvedStem) {
-            resolvedStem = await this.renameNoteByTitle(selectionContext.target, earlyTitle);
+            resolvedStem = await this.renameNoteByTitle(
+              selectionContext.target,
+              earlyTitle,
+              sourceFolder
+            );
           }
           await ensureLinkInsertedOnce(resolvedStem);
         }
@@ -495,7 +511,11 @@ export default class DontAskMeAgainPlugin extends Plugin {
       selectionContext.target.editor.setValue(finalMarkdown);
       selectionContext.target.editor.setCursor({ line: 0, ch: 0 });
 
-      const renamedStem = resolvedStem ?? await this.renameNoteFromAnswer(selectionContext.target, answer);
+      const renamedStem = resolvedStem ?? await this.renameNoteFromAnswer(
+        selectionContext.target,
+        answer,
+        sourceFolder
+      );
       if (!renamedStem) {
         new Notice("No leading # title found, keeping untitled note name.");
         return;
@@ -541,7 +561,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
         this.settings.defaultTemplates.forEach((template) => {
           menu.addItem((item) =>
             item.setTitle(`Use Template: ${template}`).onClick(() => {
-              this.applyTemplateToInput(template);
+              void this.handleSubmit(template);
             })
           );
         });
@@ -1035,6 +1055,12 @@ export default class DontAskMeAgainPlugin extends Plugin {
       "You are an assistant chatting inside Obsidian for one active note.",
       "The active note is shown below as @active_file.",
       "Provide practical markdown answer text.",
+      "Output rules for Obsidian:",
+      "- The final answer must be valid Markdown suitable for direct insertion into a note.",
+      "- Do not wrap the entire answer in a single fenced code block unless the user explicitly asks.",
+      "- For inline math, use MathJax inline form: $...$.",
+      "- For block math, use MathJax block form on separate lines: $$...$$.",
+      "- Do not use \\(...\\) or \\[...\\] delimiters.",
       "",
       `@active_file path:\n${activeFilePath}`,
       "",

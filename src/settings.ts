@@ -638,20 +638,22 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
   private renderTemplatesSection(containerEl: HTMLElement): void {
     containerEl.createEl("h3", { text: "Templates" });
 
-    new Setting(containerEl)
+    const templateSetting = new Setting(containerEl)
       .setName("Selection templates")
       .setDesc("One template per line for the selection popup.")
-      .addTextArea((text) =>
-        text
-          .setValue(this.plugin.settings.defaultTemplates.join("\n"))
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates = value
-              .split("\n")
-              .map((entry) => entry.trim())
-              .filter(Boolean);
-            await this.plugin.saveSettings();
-          })
-      );
+      .addTextArea((text) => {
+        text.setValue(this.plugin.settings.defaultTemplates.join("\n"));
+        text.inputEl.addClass("dama-settings-template-input");
+        text.inputEl.rows = 10;
+        text.onChange(async (value) => {
+          this.plugin.settings.defaultTemplates = value
+            .split("\n")
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+          await this.plugin.saveSettings();
+        });
+      });
+    templateSetting.settingEl.addClass("dama-settings-template-setting");
 
     new Setting(containerEl)
       .setName("Selection UI mode")
@@ -693,4 +695,5 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       );
 
   }
+
 }

@@ -77,6 +77,42 @@ describe("invokeToolStream", () => {
     expect(events[1]).toEqual({ type: "answer_delta", text: "yzantine Generals Problem" });
     expect(events[2]).toEqual({ type: "done", answer: "The Byzantine Generals Problem" });
   });
+
+  it("does not duplicate when done.answer only differs by surrounding whitespace", async () => {
+    const chunks = [
+      "event: answer_delta\r\ndata: {\"text\":\"\\n\\n## Title\\nBody\"}\r\n\r\n",
+      "event: done\r\ndata: {\"ok\":true,\"answer\":\"## Title\\nBody\"}\r\n\r\n"
+    ];
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      }
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: stream
+      })
+    );
+
+    const events: StreamEvent[] = [];
+    await invokeToolStream("http://127.0.0.1:8787", { hello: "world" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      { type: "answer_delta", text: "\n\n## Title\nBody" },
+      { type: "done", answer: "## Title\nBody" }
+    ]);
+  });
 });
 
 describe("invokeResponsesStream", () => {
@@ -154,5 +190,43 @@ describe("invokeResponsesStream", () => {
     expect(events[1]).toEqual({ type: "answer_delta", text: "yzantine Generals Problem" });
     expect(events[2]).toEqual({ type: "session", sessionId: "sess_r2" });
     expect(events[3]).toEqual({ type: "done" });
+  });
+
+  it("does not duplicate when response.output_text.done only differs by surrounding whitespace", async () => {
+    const chunks = [
+      "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"\\nResult\"}\r\n\r\n",
+      "event: response.output_text.done\r\ndata: {\"type\":\"response.output_text.done\",\"text\":\"Result\"}\r\n\r\n",
+      "event: response.completed\r\ndata: {\"type\":\"response.completed\",\"response\":{\"metadata\":{\"session_id\":\"sess_r3\"}}}\r\n\r\n"
+    ];
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      }
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: stream
+      })
+    );
+
+    const events: StreamEvent[] = [];
+    await invokeResponsesStream("http://127.0.0.1:8787", { hello: "world" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      { type: "answer_delta", text: "\nResult" },
+      { type: "session", sessionId: "sess_r3" },
+      { type: "done" }
+    ]);
   });
 });

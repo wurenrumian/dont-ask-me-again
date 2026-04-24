@@ -131,8 +131,15 @@ export function buildSourceReplacement(filename: string, selectionText: string):
   return alias.length > 0 ? `[[${stem}|${alias}]]` : `[[${stem}]]`;
 }
 
-export async function resolveUniqueMarkdownPath(app: App, filename: string): Promise<string> {
-  const basePath = buildResolvedMarkdownPath(filename);
+export async function resolveUniqueMarkdownPath(
+  app: App,
+  filename: string,
+  directory = ""
+): Promise<string> {
+  const baseName = buildResolvedMarkdownPath(filename);
+  const basePath = directory.trim().length > 0
+    ? normalizePath(`${directory}/${baseName}`)
+    : normalizePath(baseName);
   const parsed = basePath.replace(/\.md$/i, "");
   let attempt = 0;
 

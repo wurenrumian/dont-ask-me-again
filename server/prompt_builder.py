@@ -4,6 +4,17 @@ from server.schemas import InvokeRequest
 from server.session_store import SessionRecord
 
 
+def _obsidian_markdown_rules() -> str:
+    return (
+        "Output rules for Obsidian:\n"
+        "- The final answer must be valid Markdown suitable for direct insertion into a note.\n"
+        "- Do not wrap the entire answer in a single fenced code block unless the user explicitly asks.\n"
+        "- For inline math, use MathJax inline form: $...$.\n"
+        "- For block math, use MathJax block form on separate lines: $$...$$.\n"
+        "- Do not use \\(...\\) or \\[...\\] delimiters.\n"
+    )
+
+
 def build_runtime_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
     selection_block = (
         f"Selected text:\n{payload.input.selection_text}\n\n"
@@ -21,6 +32,7 @@ def build_runtime_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
     return (
         "You are generating an Obsidian note from the current file context.\n"
         "Return only a JSON object with keys filename and markdown.\n\n"
+        f"{_obsidian_markdown_rules()}\n"
         f"Source file path:\n{payload.input.active_file_path}\n\n"
         f"Source file content:\n{payload.input.active_file_content}\n\n"
         f"{selection_block}"
@@ -50,7 +62,8 @@ def build_chat_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         "Always output TWO XML-style sections in this exact order:\n"
         "<thinking>...</thinking>\n"
         "<answer>...</answer>\n"
-        "Both sections must be present. answer must be markdown suitable to append into the note.\n\n"
+        "Both sections must be present.\n"
+        f"{_obsidian_markdown_rules()}\n"
         f"@active_file path:\n{payload.input.active_file_path}\n\n"
         f"@active_file content:\n{payload.input.active_file_content}\n\n"
         f"{selection_block}"
@@ -69,7 +82,8 @@ def build_responses_prompt(instruction: str, session: SessionRecord) -> str:
 
     return (
         "You are a coding assistant responding to a Responses API client.\n"
-        "Return plain helpful text. If you need internal reasoning, keep it brief.\n\n"
+        "Return plain helpful text. If you need internal reasoning, keep it brief.\n"
+        f"{_obsidian_markdown_rules()}\n"
         f"{history_block}"
         f"User input:\n{instruction.strip()}\n"
     )

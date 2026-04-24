@@ -148,3 +148,17 @@
   font-family: var(--font-monospace);
   font-size: 12px;
 }
+
+.dama-settings-template-setting .setting-item-control {
+  flex: 1 1 100%;
+}
+
+.dama-settings-template-input {
+  width: min(760px, 100%);
+  min-height: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  line-height: 1.55;
+  font-size: 14px;
+  resize: vertical;
+}

@@ -185,6 +185,34 @@ function buildApiUrl(baseUrl: string, path: string): string {
   return `${normalizeBaseUrl(baseUrl)}${path}`;
 }
 
+function reconcileFinalAnswerDelta(
+  accumulated: string,
+  finalAnswer: string
+): { deltaToEmit: string; nextAccumulated: string } {
+  if (!finalAnswer) {
+    return { deltaToEmit: "", nextAccumulated: accumulated };
+  }
+
+  if (!accumulated) {
+    return { deltaToEmit: finalAnswer, nextAccumulated: finalAnswer };
+  }
+
+  if (finalAnswer.startsWith(accumulated)) {
+    const missingTail = finalAnswer.slice(accumulated.length);
+    return {
+      deltaToEmit: missingTail,
+      nextAccumulated: `${accumulated}${missingTail}`
+    };
+  }
+
+  // Streaming chunks may preserve leading/trailing whitespace while final answer is trimmed.
+  if (finalAnswer.trim() === accumulated.trim() || accumulated.startsWith(finalAnswer)) {
+    return { deltaToEmit: "", nextAccumulated: accumulated };
+  }
+
+  return { deltaToEmit: finalAnswer, nextAccumulated: finalAnswer };
+}
+
 async function requestJson(
   url: string,
   method: "GET" | "POST" | "DELETE",
@@ -295,16 +323,11 @@ export async function invokeToolStream(
       onEvent({ type: "answer_delta", text: deltaText });
     } else if (eventName === "done") {
       const finalAnswer = String(data.answer ?? "");
-      if (finalAnswer && finalAnswer.startsWith(answerAccumulated)) {
-        const missingTail = finalAnswer.slice(answerAccumulated.length);
-        if (missingTail.length > 0) {
-          onEvent({ type: "answer_delta", text: missingTail });
-          answerAccumulated += missingTail;
-        }
-      } else if (finalAnswer && finalAnswer !== answerAccumulated) {
-        onEvent({ type: "answer_delta", text: finalAnswer });
-        answerAccumulated = finalAnswer;
+      const reconciled = reconcileFinalAnswerDelta(answerAccumulated, finalAnswer);
+      if (reconciled.deltaToEmit.length > 0) {
+        onEvent({ type: "answer_delta", text: reconciled.deltaToEmit });
       }
+      answerAccumulated = reconciled.nextAccumulated;
       if (finalAnswer) {
         onEvent({ type: "done", answer: finalAnswer });
       } else {
@@ -400,16 +423,11 @@ export async function invokeResponsesStream(
     }
     if (eventName === "response.output_text.done") {
       const finalAnswer = String(data.text ?? "");
-      if (finalAnswer && finalAnswer.startsWith(answerAccumulated)) {
-        const missingTail = finalAnswer.slice(answerAccumulated.length);
-        if (missingTail.length > 0) {
-          onEvent({ type: "answer_delta", text: missingTail });
-          answerAccumulated += missingTail;
-        }
-      } else if (finalAnswer && finalAnswer !== answerAccumulated) {
-        onEvent({ type: "answer_delta", text: finalAnswer });
-        answerAccumulated = finalAnswer;
+      const reconciled = reconcileFinalAnswerDelta(answerAccumulated, finalAnswer);
+      if (reconciled.deltaToEmit.length > 0) {
+        onEvent({ type: "answer_delta", text: reconciled.deltaToEmit });
       }
+      answerAccumulated = reconciled.nextAccumulated;
       return;
     }
     if (eventName === "response.completed") {
