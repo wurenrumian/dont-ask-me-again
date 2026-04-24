@@ -172,36 +172,34 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
   private renderModelProviderSection(containerEl: HTMLElement): void {
     const sectionEl = containerEl.createDiv({ cls: "model-provider-section" });
-    sectionEl.createEl("h3", { text: "Model Providers" });
 
-    const descEl = sectionEl.createEl("p", {
-      text: "Configure your AI models and providers. Click a card to set default, use buttons to edit or delete."
+    const headerEl = sectionEl.createDiv({ cls: "model-provider-header" });
+    headerEl.createEl("h3", { text: "Model Providers" });
+
+    const actionsEl = headerEl.createDiv({ cls: "model-provider-header-actions" });
+
+    actionsEl.createEl("button", { text: "Refresh", cls: "mod-subtle" }, (btn) => {
+      btn.onclick = async () => {
+        await this.loadModelProviders(sectionEl);
+      };
     });
-    descEl.style.color = "var(--text-muted)";
-    descEl.style.fontSize = "0.85em";
 
-    new Setting(sectionEl)
-      .setName("Add model")
-      .setDesc("Add a new model/provider configuration.")
-      .addButton((button) =>
-        button.setButtonText("+ Add Model").setCta().onClick(async () => {
-          const serverReady = await this.ensureServerReadyOrNotice(
-            "Server unavailable. Start local server first, then add model."
-          );
-          if (!serverReady) {
-            return;
-          }
-          this.startAddingNew();
-        })
-      );
-    new Setting(sectionEl)
-      .setName("Refresh model list")
-      .setDesc("Reload model providers from local server.")
-      .addButton((button) =>
-        button.setButtonText("Refresh").onClick(async () => {
-          await this.loadModelProviders(sectionEl);
-        })
-      );
+    actionsEl.createEl("button", { text: "+ Add Model", cls: "mod-cta" }, (btn) => {
+      btn.onclick = async () => {
+        const serverReady = await this.ensureServerReadyOrNotice(
+          "Server unavailable. Start local server first, then add model."
+        );
+        if (!serverReady) {
+          return;
+        }
+        this.startAddingNew();
+      };
+    });
+
+    sectionEl.createEl("p", {
+      text: "Configure your AI models and providers. Click a card to set default, use buttons to edit or delete.",
+      cls: "model-provider-desc"
+    });
 
     this.renderTitleGenerationModelSetting(sectionEl);
 
@@ -281,14 +279,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     containerEl.querySelector(".model-provider-cards")?.remove();
     containerEl.querySelector(".model-provider-warning")?.remove();
 
-    const warning = containerEl.createEl("div", {
-      cls: "model-provider-warning"
+    containerEl.createEl("div", {
+      cls: "model-provider-warning",
+      text: "⚠️ Server is not running. Start the server to manage model providers."
     });
-    warning.style.padding = "12px";
-    warning.style.background = "var(--background-secondary)";
-    warning.style.borderRadius = "6px";
-    warning.style.marginBottom = "12px";
-    warning.setText("⚠️ Server is not running. Start the server to manage model providers.");
   }
 
   private renderModelProviderList(containerEl: HTMLElement): void {
@@ -301,84 +295,41 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     }
 
     const cardsContainer = containerEl.createDiv({ cls: "model-provider-cards" });
-    cardsContainer.style.display = "flex";
-    cardsContainer.style.flexDirection = "column";
-    cardsContainer.style.gap = "8px";
-    cardsContainer.style.marginBottom = "16px";
 
     if (this.modelProviders.length === 0) {
-      const emptyState = cardsContainer.createEl("div", {
-        cls: "model-provider-empty"
+      cardsContainer.createEl("div", {
+        cls: "model-provider-empty",
+        text: "No model providers configured. Add one above."
       });
-      emptyState.style.padding = "20px";
-      emptyState.style.textAlign = "center";
-      emptyState.style.color = "var(--text-muted)";
-      emptyState.style.background = "var(--background-secondary)";
-      emptyState.style.borderRadius = "6px";
-      emptyState.setText("No model providers configured. Add one below.");
     } else {
       for (const entry of this.modelProviders) {
         this.renderModelProviderCard(cardsContainer, entry);
       }
     }
-
   }
 
   private renderModelProviderCard(container: HTMLElement, entry: ModelProviderEntry): void {
-    const card = container.createDiv({ cls: "model-provider-card" });
-    card.style.padding = "12px";
-    card.style.background = "var(--background-secondary)";
-    card.style.borderRadius = "6px";
-    card.style.border = entry.is_default ? "2px solid var(--interactive-accent)" : "1px solid var(--border-color)";
-    card.style.cursor = "pointer";
-    card.style.transition = "background 0.2s";
+    const card = container.createDiv({
+      cls: `model-provider-card ${entry.is_default ? "is-default" : ""}`
+    });
+
     card.onclick = () => {
       void this.setDefaultModelProvider(entry);
     };
 
-    card.onmouseenter = () => {
-      card.style.background = "var(--background-modification-hover)";
-    };
-
-    card.onmouseleave = () => {
-      card.style.background = "var(--background-secondary)";
-    };
-
     // Header row: provider badge + model name
     const header = card.createDiv({ cls: "mp-card-header" });
-    header.style.display = "flex";
-    header.style.alignItems = "center";
-    header.style.gap = "8px";
-    header.style.marginBottom = "6px";
 
-    const providerBadge = header.createSpan({ cls: "mp-provider-badge" });
-    providerBadge.style.padding = "2px 8px";
-    providerBadge.style.background = "var(--interactive-accent)";
-    providerBadge.style.color = "var(--text-on-accent)";
-    providerBadge.style.borderRadius = "4px";
-    providerBadge.style.fontSize = "0.75em";
-    providerBadge.style.fontWeight = "600";
-    providerBadge.setText(entry.provider.toUpperCase());
+    header.createSpan({ cls: "mp-provider-badge", text: entry.provider.toUpperCase() });
 
     if (entry.is_default) {
-      const defaultBadge = header.createSpan({ cls: "mp-default-badge" });
-      defaultBadge.style.padding = "2px 6px";
-      defaultBadge.style.background = "var(--text-muted)";
-      defaultBadge.style.color = "var(--background-primary)";
-      defaultBadge.style.borderRadius = "4px";
-      defaultBadge.style.fontSize = "0.7em";
-      defaultBadge.setText("DEFAULT");
+      header.createSpan({ cls: "mp-default-badge", text: "DEFAULT" });
     }
 
-    const modelName = header.createEl("strong");
-    modelName.style.fontSize = "1em";
-    modelName.setText(entry.label || entry.model);
+    header.createDiv({ cls: "mp-card-title", text: entry.label || entry.model });
 
     // Model detail
     const detail = card.createDiv({ cls: "mp-card-detail" });
-    detail.style.fontSize = "0.8em";
-    detail.style.color = "var(--text-muted)";
-
     if (entry.api_base) {
       detail.setText(`${entry.model} @ ${entry.api_base}`);
     } else {
@@ -387,33 +338,22 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
     // API key status
     if (entry.api_key_env) {
-      const keyStatus = card.createDiv({ cls: "mp-card-key-status" });
-      keyStatus.style.fontSize = "0.75em";
-      keyStatus.style.color = "var(--text-muted)";
-      keyStatus.style.marginTop = "4px";
-      keyStatus.setText(`API key: ${entry.api_key_env}`);
+      card.createDiv({
+        cls: "mp-card-key-status",
+        text: `API key: ${entry.api_key_env}`
+      });
     }
 
-    // Action buttons (放在右边)
+    // Action buttons
     const actions = card.createDiv({ cls: "mp-card-actions" });
-    actions.style.display = "flex";
-    actions.style.gap = "4px";
-    actions.style.marginLeft = "auto";
 
-    const editBtn = actions.createEl("button");
-    editBtn.style.padding = "4px 8px";
-    editBtn.style.fontSize = "0.8em";
-    editBtn.setText("Edit");
+    const editBtn = actions.createEl("button", { text: "Edit" });
     editBtn.onclick = (e) => {
       e.stopPropagation();
       this.startEditing(entry);
     };
 
-    const deleteBtn = actions.createEl("button");
-    deleteBtn.style.padding = "4px 8px";
-    deleteBtn.style.fontSize = "0.8em";
-    deleteBtn.style.color = "var(--text-error)";
-    deleteBtn.setText("Delete");
+    const deleteBtn = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       this.confirmDelete(entry);
@@ -446,105 +386,96 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     modal.contentEl.empty();
 
     const form = modal.contentEl.createEl("form");
-    form.style.paddingTop = "4px";
 
     // Provider
-    const providerSetting = new Setting(form)
+    new Setting(form)
       .setName("Provider")
-      .setDesc("AI provider name");
-
-    providerSetting.addDropdown((dropdown) => {
-      for (const opt of ALL_PROVIDER_OPTIONS) {
-        dropdown.addOption(opt.value, opt.label);
-      }
-      dropdown.setValue(this.formState.provider);
-      dropdown.onChange((value) => {
-        this.formState.provider = value as ProviderName;
+      .setDesc("AI provider name")
+      .addDropdown((dropdown) => {
+        for (const opt of ALL_PROVIDER_OPTIONS) {
+          dropdown.addOption(opt.value, opt.label);
+        }
+        dropdown.setValue(this.formState.provider);
+        dropdown.onChange((value) => {
+          this.formState.provider = value as ProviderName;
+        });
       });
-    });
 
     // Label
-    const labelSetting = new Setting(form)
+    new Setting(form)
       .setName("Label (optional)")
-      .setDesc("A friendly name for this configuration");
-
-    labelSetting.addText((text) => {
-      text.setValue(this.formState.label);
-      text.setPlaceholder("e.g., My GPT-4 Config");
-      text.onChange((value) => {
-        this.formState.label = value.trim();
+      .setDesc("A friendly name for this configuration")
+      .addText((text) => {
+        text.setValue(this.formState.label);
+        text.setPlaceholder("e.g., My GPT-4 Config");
+        text.onChange((value) => {
+          this.formState.label = value.trim();
+        });
       });
-    });
 
     // Model
-    const modelSetting = new Setting(form)
+    new Setting(form)
       .setName("Model")
-      .setDesc("Provider model name");
-
-    modelSetting.addText((text) => {
-      text.setValue(this.formState.model);
-      text.setPlaceholder("e.g., gpt-4.1, claude-sonnet-4.5");
-      text.onChange((value) => {
-        this.formState.model = value.trim();
+      .setDesc("Provider model name")
+      .addText((text) => {
+        text.setValue(this.formState.model);
+        text.setPlaceholder("e.g., gpt-4.1, claude-sonnet-4.5");
+        text.onChange((value) => {
+          this.formState.model = value.trim();
+        });
       });
-    });
 
     // API Base
-    const apiBaseSetting = new Setting(form)
+    new Setting(form)
       .setName("API Base URL (optional)")
-      .setDesc("Custom endpoint for compatible gateways");
-
-    apiBaseSetting.addText((text) => {
-      text.setValue(this.formState.apiBase);
-      text.setPlaceholder("e.g., https://api.openai.com/v1");
-      text.onChange((value) => {
-        this.formState.apiBase = value.trim();
+      .setDesc("Custom endpoint for compatible gateways")
+      .addText((text) => {
+        text.setValue(this.formState.apiBase);
+        text.setPlaceholder("e.g., https://api.openai.com/v1");
+        text.onChange((value) => {
+          this.formState.apiBase = value.trim();
+        });
       });
-    });
 
     // API Key
-    const apiKeySetting = new Setting(form)
+    new Setting(form)
       .setName("API Key (optional)")
-      .setDesc(existingEntry ? "Leave empty to keep existing key" : "API key for authentication");
-
-    apiKeySetting.addText((text) => {
-      text.setValue(this.formState.apiKey);
-      text.setPlaceholder(existingEntry ? "(unchanged)" : "sk-...");
-      text.inputEl.type = "password";
-      this.configureHardenedInput(text.inputEl);
-      text.inputEl.autocomplete = "new-password";
-      text.onChange((value) => {
-        this.formState.apiKey = value.trim();
+      .setDesc(existingEntry ? "Leave empty to keep existing key" : "API key for authentication")
+      .addText((text) => {
+        text.setValue(this.formState.apiKey);
+        text.setPlaceholder(existingEntry ? "(unchanged)" : "sk-...");
+        text.inputEl.type = "password";
+        this.configureHardenedInput(text.inputEl);
+        text.inputEl.autocomplete = "new-password";
+        text.onChange((value) => {
+          this.formState.apiKey = value.trim();
+        });
       });
-    });
 
     // Default toggle
-    const defaultSetting = new Setting(form)
+    new Setting(form)
       .setName("Set as default")
-      .setDesc("Use this as the default model provider");
-
-    defaultSetting.addToggle((toggle) => {
-      toggle.setValue(this.formState.isDefault);
-      toggle.onChange((value) => {
-        this.formState.isDefault = value;
+      .setDesc("Use this as the default model provider")
+      .addToggle((toggle) => {
+        toggle.setValue(this.formState.isDefault);
+        toggle.onChange((value) => {
+          this.formState.isDefault = value;
+        });
       });
+
+    const footer = form.createDiv({ cls: "dama-form-footer" });
+
+    footer.createEl("button", { text: "Cancel" }, (btn) => {
+      btn.type = "button";
+      btn.onclick = () => modal.close();
     });
 
-    const footer = form.createDiv();
-    footer.style.marginTop = "16px";
-    footer.style.display = "flex";
-    footer.style.justifyContent = "flex-end";
-    footer.style.gap = "8px";
-
-    const cancelBtn = footer.createEl("button", { text: "Cancel" });
-    cancelBtn.type = "button";
-    cancelBtn.onclick = () => modal.close();
-
-    const submitBtn = footer.createEl("button", {
-      text: existingEntry ? "Save Changes" : "Add Provider"
+    footer.createEl("button", {
+      text: existingEntry ? "Save Changes" : "Add Provider",
+      cls: "mod-cta"
+    }, (btn) => {
+      btn.type = "submit";
     });
-    submitBtn.type = "submit";
-    submitBtn.addClass("mod-cta");
 
     form.onsubmit = async (e) => {
       e.preventDefault();
