@@ -229,6 +229,14 @@ export default class DontAskMeAgainPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "show-and-focus-prompt-box",
+      name: "Show and Focus Prompt Box",
+      callback: () => {
+        this.showFloatingBox(true);
+      }
+    });
+
     this.settings.defaultTemplates.forEach((template, index) => {
       const normalized = template.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
       const suffix = normalized.length > 0 ? normalized : `template-${index + 1}`;
