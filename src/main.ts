@@ -7,7 +7,12 @@ import {
   TFile
 } from "obsidian";
 
-import { buildToolRequest, invokeToolStream } from "./api-client";
+import {
+  buildToolRequest,
+  invokeResponsesStream,
+  invokeToolStream,
+  listSessions
+} from "./api-client";
 import {
   appendUserAndThinkingDraft,
   buildWrappedSourceLink,
@@ -31,6 +36,7 @@ import {
   DontAskMeAgainSettingTab,
   type DontAskMeAgainSettings
 } from "./settings";
+import { SessionPickerModal, type SessionPickerItem } from "./session-picker-modal";
 import { SessionManager } from "./session-manager";
 
 interface ActiveEditorContext {
@@ -69,7 +75,7 @@ interface SelectionActionContext {
 
 export default class DontAskMeAgainPlugin extends Plugin {
   settings!: DontAskMeAgainSettings;
-  sessionManager = new SessionManager();
+  sessionManager!: SessionManager;
 
   private floatingBox!: FloatingBox;
   private statusBarEl: HTMLElement | null = null;
@@ -79,6 +85,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.sessionManager = new SessionManager();
     if (this.settings.autoStartServer) {
       await this.ensureServerRunning(false, { allowAutoStart: true });
     }
@@ -161,6 +168,11 @@ export default class DontAskMeAgainPlugin extends Plugin {
         })
       );
       menu.addItem((item) =>
+        item.setTitle("Manage sessions").onClick(() => {
+          void this.openSessionManager();
+        })
+      );
+      menu.addItem((item) =>
         item.setTitle("Focus prompt box").onClick(() => {
           this.showFloatingBox();
         })
@@ -198,6 +210,14 @@ export default class DontAskMeAgainPlugin extends Plugin {
       name: "Exit Session",
       callback: () => {
         this.exitSession();
+      }
+    });
+
+    this.addCommand({
+      id: "manage-sessions",
+      name: "Manage Sessions",
+      callback: () => {
+        void this.openSessionManager();
       }
     });
 
@@ -274,6 +294,47 @@ export default class DontAskMeAgainPlugin extends Plugin {
     this.sessionManager.clearActiveSessionId();
     this.refreshStatusBar();
     new Notice("Session cleared.");
+  }
+
+  private async openSessionManager(): Promise<void> {
+    const serverReady = await this.ensureServerRunning(false);
+    if (!serverReady) {
+      new Notice("Local server is unavailable.");
+      return;
+    }
+
+    try {
+      const response = await listSessions(this.settings.serverBaseUrl, 120);
+      new SessionPickerModal(this.app, {
+        sessions: response.entries.map((entry) => ({
+          sessionId: entry.session_id,
+          updatedAt: entry.updated_at
+        })),
+        activeSessionId: this.sessionManager.getActiveSessionId(),
+        onChoose: (item) => {
+          this.applySessionPickerAction(item);
+        }
+      }).open();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown session list error";
+      new Notice(`Failed to load sessions: ${message}`);
+    }
+  }
+
+  private applySessionPickerAction(item: SessionPickerItem): void {
+    if (item.type === "new") {
+      this.startNewSession();
+      return;
+    }
+
+    if (item.type === "clear") {
+      this.exitSession();
+      return;
+    }
+
+    this.sessionManager.setActiveSessionId(item.sessionId);
+    this.refreshStatusBar();
+    new Notice(`Switched to session: ${item.sessionId}`);
   }
 
   private syncFloatingBoxFromContext(
@@ -531,16 +592,38 @@ export default class DontAskMeAgainPlugin extends Plugin {
       }
 
       const fileContent = await this.app.vault.cachedRead(context.file);
+      const selectionText = options?.selectionTextOverride ?? context.selection.text;
       const request = buildToolRequest(
         crypto.randomUUID(),
         this.sessionManager.getActiveSessionId(),
         {
           activeFilePath: context.file.path,
           activeFileContent: fileContent,
-          selectionText: options?.selectionTextOverride ?? context.selection.text,
+          selectionText,
           instruction
         }
       );
+      const responsesRequest = {
+        model: "",
+        session_id: this.sessionManager.getActiveSessionId(),
+        stream: true,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: this.buildResponsesInput(
+                  context.file.path,
+                  fileContent,
+                  selectionText,
+                  instruction
+                )
+              }
+            ]
+          }
+        ]
+      };
 
       let thinking = "";
       let answer = "";
@@ -554,7 +637,14 @@ export default class DontAskMeAgainPlugin extends Plugin {
       this.scrollContextToBottom(context);
 
       this.floatingBox.clearStreamOutput();
-      await invokeToolStream(this.settings.serverBaseUrl, request, (event) => {
+      const streamRunner = this.settings.apiFormatMode === "openai-responses"
+        ? invokeResponsesStream
+        : invokeToolStream;
+      const streamPayload = this.settings.apiFormatMode === "openai-responses"
+        ? responsesRequest
+        : request;
+
+      await streamRunner(this.settings.serverBaseUrl, streamPayload, (event) => {
         if (event.type === "session") {
           if (event.sessionId) {
             this.sessionManager.setActiveSessionId(event.sessionId);
@@ -579,6 +669,9 @@ export default class DontAskMeAgainPlugin extends Plugin {
           return;
         }
         if (event.type === "done") {
+          if (event.answer && event.answer !== answer) {
+            answer = event.answer;
+          }
           renderState.done = true;
           this.ensureRenderPump(renderState, context, draftRef);
           return;
@@ -920,4 +1013,28 @@ export default class DontAskMeAgainPlugin extends Plugin {
       })
     ]);
   }
+
+  private buildResponsesInput(
+    activeFilePath: string,
+    activeFileContent: string,
+    selectionText: string,
+    instruction: string
+  ): string {
+    const selectionBlock = selectionText.trim().length > 0
+      ? `Selected text in current file:\n${selectionText}\n\n`
+      : "";
+    return [
+      "You are an assistant chatting inside Obsidian for one active note.",
+      "The active note is shown below as @active_file.",
+      "Provide practical markdown answer text.",
+      "",
+      `@active_file path:\n${activeFilePath}`,
+      "",
+      `@active_file content:\n${activeFileContent}`,
+      "",
+      selectionBlock,
+      `User instruction:\n${instruction}`
+    ].join("\n");
+  }
+
 }

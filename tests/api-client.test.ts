@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildToolRequest,
+  parseSessionListResponse,
   parseProviderConfigResponse,
   parseToolResponse
 } from "../src/api-client";
@@ -81,5 +82,19 @@ describe("parseProviderConfigResponse", () => {
     });
 
     expect(parsed.ok).toBe(true);
+  });
+});
+
+describe("parseSessionListResponse", () => {
+  it("accepts a valid nanobot session list payload", () => {
+    const parsed = parseSessionListResponse({
+      ok: true,
+      entries: [
+        { session_id: "sess_1", updated_at: "2026-04-24T00:00:00+00:00" },
+        { session_id: "sess_2", updated_at: null }
+      ]
+    });
+
+    expect(parsed.entries[0].session_id).toBe("sess_1");
   });
 });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -146,3 +147,22 @@ class ModelProviderDeleteRequest(BaseModel):
 class ModelProviderDeleteResponse(BaseModel):
     """删除结果响应"""
     ok: Literal[True] = True
+
+
+class SessionEntry(BaseModel):
+    session_id: str
+    updated_at: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    ok: Literal[True] = True
+    entries: list[SessionEntry]
+
+
+class ResponsesRequest(BaseModel):
+    model: str | None = None
+    input: str | list[Any] | dict[str, Any] | None = None
+    stream: bool = False
+    previous_response_id: str | None = None
+    metadata: dict[str, Any] | None = None
+    session_id: str | None = None

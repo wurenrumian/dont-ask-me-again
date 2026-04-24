@@ -141,6 +141,16 @@ export const modelProviderDeleteResponseSchema = z.object({
   ok: z.literal(true)
 });
 
+export const sessionEntrySchema = z.object({
+  session_id: z.string().min(1),
+  updated_at: z.string().nullable().optional()
+});
+
+export const sessionListResponseSchema = z.object({
+  ok: z.literal(true),
+  entries: z.array(sessionEntrySchema)
+});
+
 export type ToolResponse = z.infer<typeof toolResponseSchema>;
 export type ProviderName = z.infer<typeof providerNameSchema>;
 export type ProviderConfigResponse = z.infer<typeof providerConfigResponseSchema>;
@@ -148,6 +158,7 @@ export type ModelProviderEntry = z.infer<typeof modelProviderEntrySchema>;
 export type ModelProviderListResponse = z.infer<typeof modelProviderListResponseSchema>;
 export type ModelProviderSaveRequest = z.infer<typeof modelProviderSaveRequestSchema>;
 export type ModelProviderSaveResponse = z.infer<typeof modelProviderSaveResponseSchema>;
+export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 
 export interface ToolCallArguments {
   activeFilePath: string;
@@ -160,7 +171,7 @@ export type StreamEvent =
   | { type: "session"; sessionId: string }
   | { type: "thinking_delta"; text: string }
   | { type: "answer_delta"; text: string }
-  | { type: "done" }
+  | { type: "done"; answer?: string }
   | {
       type: "error";
       error: { code: string; message: string; retryable: boolean };
@@ -206,6 +217,10 @@ export function parseModelProviderListResponse(payload: unknown): ModelProviderL
 
 export function parseModelProviderSaveResponse(payload: unknown): ModelProviderSaveResponse {
   return modelProviderSaveResponseSchema.parse(payload);
+}
+
+export function parseSessionListResponse(payload: unknown): SessionListResponse {
+  return sessionListResponseSchema.parse(payload);
 }
 
 export function buildToolRequest(
@@ -256,6 +271,7 @@ export async function invokeToolStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let shouldStop = false;
+  let answerAccumulated = "";
 
   const takeNextBlock = (): string | null => {
     const match = buffer.match(/\r?\n\r?\n/);
@@ -274,9 +290,26 @@ export async function invokeToolStream(
     } else if (eventName === "thinking_delta") {
       onEvent({ type: "thinking_delta", text: String(data.text ?? "") });
     } else if (eventName === "answer_delta") {
-      onEvent({ type: "answer_delta", text: String(data.text ?? "") });
+      const deltaText = String(data.text ?? "");
+      answerAccumulated += deltaText;
+      onEvent({ type: "answer_delta", text: deltaText });
     } else if (eventName === "done") {
-      onEvent({ type: "done" });
+      const finalAnswer = String(data.answer ?? "");
+      if (finalAnswer && finalAnswer.startsWith(answerAccumulated)) {
+        const missingTail = finalAnswer.slice(answerAccumulated.length);
+        if (missingTail.length > 0) {
+          onEvent({ type: "answer_delta", text: missingTail });
+          answerAccumulated += missingTail;
+        }
+      } else if (finalAnswer && finalAnswer !== answerAccumulated) {
+        onEvent({ type: "answer_delta", text: finalAnswer });
+        answerAccumulated = finalAnswer;
+      }
+      if (finalAnswer) {
+        onEvent({ type: "done", answer: finalAnswer });
+      } else {
+        onEvent({ type: "done" });
+      }
       shouldStop = true;
     } else if (eventName === "error") {
       onEvent({
@@ -285,6 +318,125 @@ export async function invokeToolStream(
           code: String(data.code ?? "INTERNAL"),
           message: String(data.message ?? "Unknown stream error"),
           retryable: Boolean(data.retryable)
+        }
+      });
+      shouldStop = true;
+    }
+  };
+
+  while (true) {
+    if (shouldStop) return;
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+
+    let block = takeNextBlock();
+    while (block !== null) {
+      const lines = block.split(/\r?\n/);
+      const eventLine = lines.find((line) => line.startsWith("event:"));
+      const dataLine = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("");
+      if (eventLine) {
+        emitEvent(eventLine.slice(6).trim(), dataLine);
+        if (shouldStop) {
+          return;
+        }
+      }
+      block = takeNextBlock();
+    }
+  }
+}
+
+export async function invokeResponsesStream(
+  baseUrl: string,
+  payload: unknown,
+  onEvent: (event: StreamEvent) => void
+): Promise<void> {
+  const response = await fetch(buildApiUrl(baseUrl, "/v1/responses"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Responses stream request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let shouldStop = false;
+  let answerAccumulated = "";
+
+  const takeNextBlock = (): string | null => {
+    const match = buffer.match(/\r?\n\r?\n/);
+    if (!match || match.index === undefined) {
+      return null;
+    }
+    const block = buffer.slice(0, match.index);
+    buffer = buffer.slice(match.index + match[0].length);
+    return block;
+  };
+
+  const emitEvent = (eventName: string, dataLine: string): void => {
+    const data = dataLine ? JSON.parse(dataLine) : {};
+    if (eventName === "response.created") {
+      const sessionId = String(data.response?.metadata?.session_id ?? "");
+      if (sessionId) {
+        onEvent({ type: "session", sessionId });
+      }
+      return;
+    }
+    if (eventName === "response.output_text.delta") {
+      const deltaText = String(data.delta ?? "");
+      answerAccumulated += deltaText;
+      onEvent({ type: "answer_delta", text: deltaText });
+      return;
+    }
+    if (eventName === "response.output_text.done") {
+      const finalAnswer = String(data.text ?? "");
+      if (finalAnswer && finalAnswer.startsWith(answerAccumulated)) {
+        const missingTail = finalAnswer.slice(answerAccumulated.length);
+        if (missingTail.length > 0) {
+          onEvent({ type: "answer_delta", text: missingTail });
+          answerAccumulated += missingTail;
+        }
+      } else if (finalAnswer && finalAnswer !== answerAccumulated) {
+        onEvent({ type: "answer_delta", text: finalAnswer });
+        answerAccumulated = finalAnswer;
+      }
+      return;
+    }
+    if (eventName === "response.completed") {
+      const sessionId = String(data.response?.metadata?.session_id ?? "");
+      if (sessionId) {
+        onEvent({ type: "session", sessionId });
+      }
+      const completedAnswer = String(
+        data.response?.output_text
+          ?? data.response?.output?.[0]?.content?.[0]?.text
+          ?? ""
+      );
+      if (completedAnswer) {
+        onEvent({ type: "done", answer: completedAnswer });
+      } else {
+        onEvent({ type: "done" });
+      }
+      shouldStop = true;
+      return;
+    }
+    if (eventName === "response.error") {
+      onEvent({
+        type: "error",
+        error: {
+          code: String(data.error?.code ?? "INTERNAL"),
+          message: String(data.error?.message ?? "Unknown responses stream error"),
+          retryable: false
         }
       });
       shouldStop = true;
@@ -362,4 +514,16 @@ export async function deleteModelProvider(
     parsedPayload
   );
   return modelProviderDeleteResponseSchema.parse(json);
+}
+
+export async function listSessions(
+  baseUrl: string,
+  limit = 100
+): Promise<SessionListResponse> {
+  const normalizedLimit = Math.max(1, Math.min(limit, 500));
+  const json = await requestJson(
+    buildApiUrl(baseUrl, `/api/v1/sessions?limit=${normalizedLimit}`),
+    "GET"
+  );
+  return parseSessionListResponse(json);
 }

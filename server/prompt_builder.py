@@ -57,3 +57,19 @@ def build_chat_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         f"{history_block}"
         f"User instruction:\n{payload.input.instruction}\n"
     )
+
+
+def build_responses_prompt(instruction: str, session: SessionRecord) -> str:
+    history_block = ""
+    if session.history:
+        rendered_history = "\n".join(
+            f"{item['role']}: {item['content']}" for item in session.history[-8:]
+        )
+        history_block = f"Session history:\n{rendered_history}\n\n"
+
+    return (
+        "You are a coding assistant responding to a Responses API client.\n"
+        "Return plain helpful text. If you need internal reasoning, keep it brief.\n\n"
+        f"{history_block}"
+        f"User input:\n{instruction.strip()}\n"
+    )

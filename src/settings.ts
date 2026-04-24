@@ -11,6 +11,7 @@ import {
 import type DontAskMeAgainPlugin from "./main";
 
 export type SelectionUiMode = "templates-first" | "input-first";
+export type ApiFormatMode = "dama-native" | "openai-responses";
 
 export interface DontAskMeAgainSettings {
   serverBaseUrl: string;
@@ -20,6 +21,7 @@ export interface DontAskMeAgainSettings {
   serverStartupCwd: string;
   defaultTemplates: string[];
   selectionUiMode: SelectionUiMode;
+  apiFormatMode: ApiFormatMode;
   showStatusBar: boolean;
   floatingBoxDefaultPosition: "bottom-docked";
   openResultInCurrentTab: boolean;
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
     "Explain this like I am five."
   ],
   selectionUiMode: "templates-first",
+  apiFormatMode: "dama-native",
   showStatusBar: true,
   floatingBoxDefaultPosition: "bottom-docked",
   openResultInCurrentTab: true
@@ -149,6 +152,20 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
           new Notice(ok ? "Local server is ready." : "Local server start failed.");
         })
       );
+
+    new Setting(containerEl)
+      .setName("API format")
+      .setDesc("Choose request format: DAMA native stream or OpenAI Responses.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("dama-native", "DAMA native (/api/v1/chat/stream)")
+          .addOption("openai-responses", "OpenAI Responses (/v1/responses)")
+          .setValue(this.plugin.settings.apiFormatMode)
+          .onChange(async (value) => {
+            this.plugin.settings.apiFormatMode = value as ApiFormatMode;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 
   private renderModelProviderSection(containerEl: HTMLElement): void {
@@ -156,7 +173,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     sectionEl.createEl("h3", { text: "Model Providers" });
 
     const descEl = sectionEl.createEl("p", {
-      text: "Configure your AI models and providers. Click a card to edit, use buttons to add or delete."
+      text: "Configure your AI models and providers. Click a card to set default, use buttons to edit or delete."
     });
     descEl.style.color = "var(--text-muted)";
     descEl.style.fontSize = "0.85em";
@@ -289,6 +306,9 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     card.style.border = entry.is_default ? "2px solid var(--interactive-accent)" : "1px solid var(--border-color)";
     card.style.cursor = "pointer";
     card.style.transition = "background 0.2s";
+    card.onclick = () => {
+      void this.setDefaultModelProvider(entry);
+    };
 
     card.onmouseenter = () => {
       card.style.background = "var(--background-modification-hover)";
@@ -543,6 +563,42 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     };
 
     modal.open();
+  }
+
+  private async setDefaultModelProvider(entry: ModelProviderEntry): Promise<void> {
+    if (entry.is_default || this.isLoading) {
+      return;
+    }
+
+    try {
+      const serverReady = await this.ensureServerReadyOrNotice(
+        "Server unavailable. Please start local server first."
+      );
+      if (!serverReady) {
+        return;
+      }
+
+      const payload: ModelProviderSaveRequest = {
+        id: entry.id,
+        provider: entry.provider,
+        model: entry.model,
+        api_base: entry.api_base ?? null,
+        api_key: null,
+        label: entry.label ?? null,
+        is_default: true
+      };
+      const response = await saveModelProvider(this.plugin.settings.serverBaseUrl, payload);
+      if (!response.ok) {
+        new Notice(`Failed to set default: ${(response as any).error?.message || "Unknown error"}`);
+        return;
+      }
+
+      new Notice(`Default model set: ${entry.label || entry.model}`);
+      await this.display();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      new Notice(`Failed to set default: ${message}`);
+    }
   }
 
   private confirmDelete(entry: ModelProviderEntry): void {

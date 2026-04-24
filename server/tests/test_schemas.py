@@ -1,4 +1,9 @@
-from server.schemas import InvokeRequest, InvokeSuccessResponse, ProviderConfigRequest
+from server.schemas import (
+    InvokeRequest,
+    InvokeSuccessResponse,
+    ProviderConfigRequest,
+    ResponsesRequest,
+)
 
 
 def test_request_accepts_expected_shape() -> None:
@@ -46,3 +51,18 @@ def test_provider_config_request_accepts_minimax_payload() -> None:
     )
 
     assert payload.provider == "minimax"
+
+
+def test_responses_request_accepts_openai_shape() -> None:
+    payload = ResponsesRequest.model_validate(
+        {
+            "model": "gpt-5-codex",
+            "input": [
+                {"role": "user", "content": [{"type": "input_text", "text": "hello"}]}
+            ],
+            "stream": True,
+            "previous_response_id": "resp_123",
+        }
+    )
+
+    assert payload.stream is True
