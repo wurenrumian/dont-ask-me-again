@@ -13,15 +13,20 @@ class NanobotAdapter:
         self.settings = settings
         self._ensure_vendor_on_path()
 
-    async def run_turn(self, prompt: str, session_id: str) -> str:
-        config_path = self._resolve_config_path_or_raise()
+    async def run_turn(
+        self,
+        prompt: str,
+        session_id: str,
+        config_path: Path | None = None,
+    ) -> str:
+        resolved_config_path = config_path or self._resolve_config_path_or_raise()
         from nanobot import Nanobot
 
         workspace = self.settings.resolve_workspace(self.project_root)
         workspace.mkdir(parents=True, exist_ok=True)
 
         bot = Nanobot.from_config(
-            config_path=str(config_path),
+            config_path=str(resolved_config_path),
             workspace=workspace,
         )
         result = await bot.run(
@@ -35,8 +40,9 @@ class NanobotAdapter:
         prompt: str,
         session_id: str,
         on_delta: Callable[[str], Awaitable[None]],
+        config_path: Path | None = None,
     ) -> str:
-        config_path = self._resolve_config_path_or_raise()
+        resolved_config_path = config_path or self._resolve_config_path_or_raise()
         from nanobot import Nanobot
         from nanobot.agent.hook import AgentHook, AgentHookContext
 
@@ -52,7 +58,7 @@ class NanobotAdapter:
                     await on_delta(delta)
 
         bot = Nanobot.from_config(
-            config_path=str(config_path),
+            config_path=str(resolved_config_path),
             workspace=workspace,
         )
         result = await bot.run(

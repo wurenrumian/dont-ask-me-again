@@ -6,6 +6,8 @@ import {
   parseProviderConfigResponse,
   parseToolResponse
 } from "../src/api-client";
+import { SessionPickerModal, type SessionPickerItem } from "../src/session-picker-modal";
+import { DEFAULT_SETTINGS as PLUGIN_DEFAULT_SETTINGS } from "../src/settings";
 
 describe("buildToolRequest", () => {
   it("builds the provider-agnostic plugin request shape", () => {
@@ -14,11 +16,12 @@ describe("buildToolRequest", () => {
       activeFileContent: "# Note",
       selectionText: "entropy",
       instruction: "Explain this."
-    });
+    }, "model-1");
 
     expect(request).toEqual({
       request_id: "req-1",
       session_id: null,
+      title_generation_model_id: "model-1",
       input: {
         active_file_path: "note.md",
         active_file_content: "# Note",
@@ -90,11 +93,39 @@ describe("parseSessionListResponse", () => {
     const parsed = parseSessionListResponse({
       ok: true,
       entries: [
-        { session_id: "sess_1", updated_at: "2026-04-24T00:00:00+00:00" },
+        {
+          session_id: "sess_1",
+          title: "Summarize config migration",
+          updated_at: "2026-04-24T00:00:00+00:00"
+        },
         { session_id: "sess_2", updated_at: null }
       ]
     });
 
     expect(parsed.entries[0].session_id).toBe("sess_1");
+    expect(parsed.entries[0].title).toBe("Summarize config migration");
+  });
+});
+
+describe("settings defaults", () => {
+  it("disables title generation by default", () => {
+    expect(PLUGIN_DEFAULT_SETTINGS.titleGenerationModelId).toBeNull();
+  });
+});
+
+describe("SessionPickerModal labels", () => {
+  it("prefers title over session id", () => {
+    const item: SessionPickerItem = {
+      type: "history",
+      sessionId: "sess_1",
+      title: "Explain provider sync",
+      isActive: false,
+      updatedAt: null
+    };
+
+    const text = SessionPickerModal.prototype.getItemText.call({}, item);
+
+    expect(text).toContain("Explain provider sync");
+    expect(text).not.toContain("sess_1 -");
   });
 });

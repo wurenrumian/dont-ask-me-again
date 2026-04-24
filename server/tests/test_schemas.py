@@ -11,6 +11,7 @@ def test_request_accepts_expected_shape() -> None:
         {
             "request_id": "req-1",
             "session_id": None,
+            "title_generation_model_id": "model-1",
             "input": {
                 "active_file_path": "note.md",
                 "active_file_content": "# Note",
@@ -22,22 +23,23 @@ def test_request_accepts_expected_shape() -> None:
     )
 
     assert payload.input.selection_text == "entropy"
+    assert payload.title_generation_model_id == "model-1"
 
 
-def test_success_response_requires_filename() -> None:
+def test_success_response_requires_thinking_and_answer() -> None:
     payload = InvokeSuccessResponse.model_validate(
         {
             "ok": True,
             "result": {
                 "session_id": "sess_1",
-                "filename": "entropy-answer",
-                "markdown": "# Answer",
+                "thinking": "Let me think.",
+                "answer": "# Answer",
             },
             "error": None,
         }
     )
 
-    assert payload.result.filename == "entropy-answer"
+    assert payload.result.answer == "# Answer"
 
 
 def test_provider_config_request_accepts_minimax_payload() -> None:
@@ -62,7 +64,9 @@ def test_responses_request_accepts_openai_shape() -> None:
             ],
             "stream": True,
             "previous_response_id": "resp_123",
+            "title_generation_model_id": "model-1",
         }
     )
 
     assert payload.stream is True
+    assert payload.title_generation_model_id == "model-1"

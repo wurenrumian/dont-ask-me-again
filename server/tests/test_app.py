@@ -191,6 +191,165 @@ def test_list_sessions_reads_nanobot_workspace(monkeypatch, tmp_path) -> None:
     ]
 
 
+def test_list_sessions_includes_in_memory_title(monkeypatch, tmp_path) -> None:
+    workspace = tmp_path / "nanobot-workspace"
+    sessions = workspace / "sessions"
+    sessions.mkdir(parents=True)
+
+    session_file = sessions / "dont-ask-me-again_sess_with_title.jsonl"
+    session_file.write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(app_module.settings, "nanobot_workspace", str(workspace))
+    monkeypatch.setattr(app_module.settings, "nanobot_session_prefix", "dont-ask-me-again")
+
+    app_module.session_store.get_or_create("sess_with_title")
+    app_module.session_store.set_title("sess_with_title", "First turn summary")
+
+    response = client.get("/api/v1/sessions?limit=10")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["entries"][0]["session_id"] == "sess_with_title"
+    assert body["entries"][0]["title"] == "First turn summary"
+
+
+def test_new_session_first_request_starts_title_generation_once(monkeypatch) -> None:
+    scheduled: list[tuple[str, str, str | None]] = []
+
+    async def fake_run_turn(prompt: str, session_id: str) -> str:
+        return "ok"
+
+    def fake_schedule(session, first_user_text: str, title_model_id: str | None) -> None:
+        scheduled.append((session.session_id, first_user_text, title_model_id))
+
+    monkeypatch.setattr(app_module.runtime, "run_turn", fake_run_turn)
+    monkeypatch.setattr(app_module, "_schedule_session_title_generation", fake_schedule)
+
+    response = client.post(
+        "/api/v1/invoke",
+        json={
+            "request_id": "req-1",
+            "session_id": None,
+            "title_generation_model_id": "model-1",
+            "input": {
+                "active_file_path": "note.md",
+                "active_file_content": "# Note",
+                "selection_text": "",
+                "instruction": "Draft a changelog summary",
+            },
+            "client": {"name": "dont-ask-me-again", "version": "0.1.0"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert scheduled == [
+        (response.json()["result"]["session_id"], "Draft a changelog summary", "model-1")
+    ]
+
+
+def test_existing_session_does_not_retry_title_generation(monkeypatch) -> None:
+    seen_calls: list[str] = []
+    session = app_module.session_store.create()
+
+    async def fake_run_turn(prompt: str, session_id: str) -> str:
+        return "ok"
+
+    def fake_schedule(session_record, first_user_text: str, title_model_id: str | None) -> None:
+        seen_calls.append(session_record.session_id)
+
+    monkeypatch.setattr(app_module.runtime, "run_turn", fake_run_turn)
+    monkeypatch.setattr(app_module, "_schedule_session_title_generation", fake_schedule)
+
+    first = client.post(
+        "/api/v1/invoke",
+        json={
+            "request_id": "req-1",
+            "session_id": session.session_id,
+            "title_generation_model_id": "model-1",
+            "input": {
+                "active_file_path": "note.md",
+                "active_file_content": "# Note",
+                "selection_text": "",
+                "instruction": "first",
+            },
+            "client": {"name": "dont-ask-me-again", "version": "0.1.0"},
+        },
+    )
+    second = client.post(
+        "/api/v1/invoke",
+        json={
+            "request_id": "req-2",
+            "session_id": first.json()["result"]["session_id"],
+            "title_generation_model_id": "model-1",
+            "input": {
+                "active_file_path": "note.md",
+                "active_file_content": "# Note",
+                "selection_text": "",
+                "instruction": "second",
+            },
+            "client": {"name": "dont-ask-me-again", "version": "0.1.0"},
+        },
+    )
+
+    assert second.status_code == 200
+    assert seen_calls == []
+
+
+def test_generate_title_normalizes_and_stores_result(monkeypatch) -> None:
+    session = app_module.session_store.create()
+    app_module.session_store.append_turn(session.session_id, "user", "Explain provider sync")
+
+    monkeypatch.setattr(
+        app_module,
+        "_resolve_title_generation_model",
+        lambda model_id: {
+            "id": model_id,
+            "provider": "openai",
+            "model": "gpt-5.4-mini",
+            "api_base": None,
+        },
+    )
+
+    async def fake_run_title_turn(
+        *, first_user_text: str, session_id: str, model_entry: dict[str, str | None]
+    ) -> str:
+        assert "Explain provider sync" in first_user_text
+        assert session_id == session.session_id
+        assert model_entry["id"] == "model-1"
+        return '  "Provider sync flow"  '
+
+    monkeypatch.setattr(app_module, "_run_title_generation_turn", fake_run_title_turn)
+
+    import asyncio
+
+    asyncio.run(app_module._generate_session_title(session, "Explain provider sync", "model-1"))
+
+    stored = app_module.session_store.get(session.session_id)
+    assert stored.title == "Provider sync flow"
+    assert stored.title_generation_state == "done"
+
+
+def test_generate_title_skips_when_model_not_configured() -> None:
+    session = app_module.session_store.create()
+
+    import asyncio
+
+    asyncio.run(app_module._generate_session_title(session, "Hello", None))
+
+    stored = app_module.session_store.get(session.session_id)
+    assert stored.title is None
+    assert stored.title_generation_state == "done"
+
+
+def test_build_session_title_prompt_requests_short_chinese_title() -> None:
+    prompt = app_module._build_session_title_prompt("帮我整理 provider config 的同步流程")
+
+    assert "10个字左右" in prompt
+    assert "中文标题" in prompt
+    assert "只返回标题文本" in prompt
+    assert "帮我整理 provider config 的同步流程" in prompt
+
+
 def test_openai_responses_returns_completed_object(monkeypatch) -> None:
     async def fake_run_turn(prompt: str, session_id: str) -> str:
         assert "Write a function" in prompt

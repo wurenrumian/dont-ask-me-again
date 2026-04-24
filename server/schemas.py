@@ -21,6 +21,7 @@ class InvokeInput(BaseModel):
 class InvokeRequest(BaseModel):
     request_id: str
     session_id: str | None = None
+    title_generation_model_id: str | None = None
     input: InvokeInput
     client: ClientInfo
 
@@ -151,6 +152,7 @@ class ModelProviderDeleteResponse(BaseModel):
 
 class SessionEntry(BaseModel):
     session_id: str
+    title: str | None = None
     updated_at: str | None = None
 
 
@@ -166,3 +168,4 @@ class ResponsesRequest(BaseModel):
     previous_response_id: str | None = None
     metadata: dict[str, Any] | None = None
     session_id: str | None = None
+    title_generation_model_id: str | None = None

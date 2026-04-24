@@ -3,10 +3,16 @@ import { App, FuzzySuggestModal } from "obsidian";
 export type SessionPickerItem =
   | { type: "new" }
   | { type: "clear" }
-  | { type: "history"; sessionId: string; isActive: boolean; updatedAt?: string | null };
+  | {
+      type: "history";
+      sessionId: string;
+      title?: string | null;
+      isActive: boolean;
+      updatedAt?: string | null;
+    };
 
 interface SessionPickerModalOptions {
-  sessions: { sessionId: string; updatedAt?: string | null }[];
+  sessions: { sessionId: string; title?: string | null; updatedAt?: string | null }[];
   activeSessionId: string | null;
   onChoose: (item: SessionPickerItem) => void;
 }
@@ -22,6 +28,7 @@ export class SessionPickerModal extends FuzzySuggestModal<SessionPickerItem> {
     const historyItems: SessionPickerItem[] = options.sessions.map((entry) => ({
       type: "history",
       sessionId: entry.sessionId,
+      title: entry.title ?? null,
       isActive: options.activeSessionId === entry.sessionId,
       updatedAt: entry.updatedAt
     }));
@@ -41,7 +48,8 @@ export class SessionPickerModal extends FuzzySuggestModal<SessionPickerItem> {
     }
     const activeTag = item.isActive ? " (active)" : "";
     const updatedAt = item.updatedAt ? ` - ${item.updatedAt}` : "";
-    return `${item.sessionId}${activeTag}${updatedAt}`;
+    const label = item.title?.trim() || item.sessionId;
+    return `${label}${activeTag}${updatedAt}`;
   }
 
   onChooseItem(item: SessionPickerItem): void {

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import tempfile
 import time
 from uuid import uuid4
 from pathlib import Path
@@ -16,8 +17,10 @@ from fastapi.responses import StreamingResponse
 from server.config import ServerSettings, load_runtime_env
 from server.provider_config_store import (
     apply_provider_config,
+    build_runtime_config_for_model,
     delete_model_provider,
     ensure_runtime_config_synced,
+    get_model_provider_by_id,
     list_model_providers,
     save_model_provider,
 )
@@ -41,6 +44,7 @@ from server.schemas import (
 )
 from server.session_catalog import list_nanobot_sessions
 from server.session_store import InMemorySessionStore
+from server.session_store import SessionRecord
 
 app = FastAPI(title="dont-ask-me-again-server", version="0.1.0")
 app.add_middleware(
@@ -71,8 +75,14 @@ def healthcheck() -> dict[str, str]:
 @app.post("/api/v1/invoke")
 async def invoke(payload: InvokeRequest) -> InvokeSuccessResponse | InvokeErrorResponse:
     ensure_runtime_config_synced(project_root)
-    session = session_store.get_or_create(payload.session_id)
+    session, created = session_store.get_or_create(payload.session_id)
     session_store.append_turn(session.session_id, "user", payload.input.instruction)
+    if created:
+        _schedule_session_title_generation(
+            session,
+            payload.input.instruction,
+            payload.title_generation_model_id,
+        )
     prompt = build_chat_prompt(payload, session)
 
     try:
@@ -109,6 +119,112 @@ async def invoke(payload: InvokeRequest) -> InvokeSuccessResponse | InvokeErrorR
 
 def _to_sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _normalize_session_title(value: str) -> str | None:
+    normalized = " ".join(value.strip().strip("\"'").split())
+    if not normalized:
+        return None
+    trimmed = normalized[:80].rstrip(" .,:;!?-")
+    return trimmed or None
+
+
+def _build_session_title_prompt(first_user_text: str) -> str:
+    return (
+        "请根据用户的第一条请求，生成一个10个字左右的中文标题。\n"
+        "只返回标题文本。\n"
+        "不要返回引号、序号、解释、标签、Markdown 或句号。\n"
+        "标题要具体，适合作为会话名称。\n\n"
+        f"用户请求：\n{first_user_text.strip()}"
+    )
+
+
+def _resolve_title_generation_model(model_id: str | None):
+    if not model_id:
+        return None
+    return get_model_provider_by_id(project_root, model_id)
+
+
+async def _run_title_generation_turn(
+    *,
+    first_user_text: str,
+    session_id: str,
+    model_entry,
+) -> str:
+    config_data = build_runtime_config_for_model(project_root, model_entry)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".json",
+        delete=False,
+    ) as handle:
+        temp_config_path = Path(handle.name)
+        json.dump(config_data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+
+    try:
+        return await runtime.run_turn(
+            _build_session_title_prompt(first_user_text),
+            session_id=f"{session_id}:title",
+            config_path=temp_config_path,
+        )
+    finally:
+        temp_config_path.unlink(missing_ok=True)
+
+
+async def _generate_session_title(
+    session: SessionRecord,
+    first_user_text: str,
+    title_model_id: str | None,
+) -> None:
+    if not first_user_text.strip():
+        session_store.mark_title_generation_done(session.session_id)
+        return
+
+    model_entry = _resolve_title_generation_model(title_model_id)
+    if model_entry is None:
+        session_store.mark_title_generation_done(session.session_id)
+        return
+
+    try:
+        raw_title = await _run_title_generation_turn(
+            first_user_text=first_user_text,
+            session_id=session.session_id,
+            model_entry=model_entry,
+        )
+        session_store.set_title(session.session_id, _normalize_session_title(raw_title))
+    except Exception:
+        logger.exception("[title] generation failed for session %s", session.session_id)
+    finally:
+        session_store.mark_title_generation_done(session.session_id)
+
+
+def _schedule_session_title_generation(
+    session: SessionRecord,
+    first_user_text: str,
+    title_model_id: str | None,
+) -> None:
+    if not session_store.try_mark_title_generation_running(session.session_id):
+        return
+    asyncio.create_task(_generate_session_title(session, first_user_text, title_model_id))
+
+
+def _apply_in_memory_titles(response: SessionListResponse) -> SessionListResponse:
+    titles_by_session_id = {
+        record.session_id: record.title
+        for record in session_store.list_records()
+        if record.title
+    }
+    if not titles_by_session_id:
+        return response
+
+    entries = [
+        entry.model_copy(
+            update={"title": titles_by_session_id.get(entry.session_id, entry.title)}
+        )
+        for entry in response.entries
+    ]
+    return SessionListResponse(entries=entries)
 
 
 def _split_output(raw_output: str) -> tuple[str, str]:
@@ -306,8 +422,14 @@ class _TaggedStreamParser:
 async def stream_chat(payload: InvokeRequest) -> StreamingResponse:
     async def event_generator():
         ensure_runtime_config_synced(project_root)
-        session = session_store.get_or_create(payload.session_id)
+        session, created = session_store.get_or_create(payload.session_id)
         session_store.append_turn(session.session_id, "user", payload.input.instruction)
+        if created:
+            _schedule_session_title_generation(
+                session,
+                payload.input.instruction,
+                payload.title_generation_model_id,
+            )
         prompt = build_chat_prompt(payload, session)
 
         yield _to_sse_event("session", {"session_id": session.session_id})
@@ -373,9 +495,15 @@ async def stream_chat(payload: InvokeRequest) -> StreamingResponse:
 @app.post("/v1/responses")
 async def create_response(payload: ResponsesRequest):
     session_id = _resolve_session_id_for_responses(payload)
-    session = session_store.get_or_create(session_id)
+    session, created = session_store.get_or_create(session_id)
     input_text = _extract_responses_input_text(payload.input).strip()
     session_store.append_turn(session.session_id, "user", input_text)
+    if created:
+        _schedule_session_title_generation(
+            session,
+            input_text,
+            payload.title_generation_model_id,
+        )
     prompt = build_responses_prompt(input_text, session)
 
     if payload.stream:
@@ -589,4 +717,5 @@ def remove_model_provider(
 @app.get("/api/v1/sessions")
 def list_sessions(limit: int = 100) -> SessionListResponse:
     """列出 nanobot workspace 中可复用的会话。"""
-    return list_nanobot_sessions(project_root, settings, limit=limit)
+    response = list_nanobot_sessions(project_root, settings, limit=limit)
+    return _apply_in_memory_titles(response)

@@ -19,6 +19,7 @@ export interface DontAskMeAgainSettings {
   showServerTerminalOnAutoStart: boolean;
   serverStartupCommand: string;
   serverStartupCwd: string;
+  titleGenerationModelId: string | null;
   defaultTemplates: string[];
   selectionUiMode: SelectionUiMode;
   apiFormatMode: ApiFormatMode;
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
   serverStartupCommand:
     "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787",
   serverStartupCwd: "",
+  titleGenerationModelId: null,
   defaultTemplates: [
     "Explain this in detail.",
     "Give me a concrete example.",
@@ -201,8 +203,31 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
         })
       );
 
+    this.renderTitleGenerationModelSetting(sectionEl);
+
     // 加载现有配置
     this.loadModelProviders(sectionEl);
+  }
+
+  private renderTitleGenerationModelSetting(containerEl: HTMLElement): void {
+    containerEl.querySelector(".title-generation-model-setting")?.remove();
+
+    const setting = new Setting(containerEl)
+      .setName("Title generation model")
+      .setDesc("Choose a configured model for automatic session titles, or disable title generation.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Disabled");
+        for (const entry of this.modelProviders) {
+          dropdown.addOption(entry.id, entry.label || entry.model);
+        }
+        dropdown.setValue(this.plugin.settings.titleGenerationModelId ?? "");
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.titleGenerationModelId = value || null;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    setting.settingEl.addClass("title-generation-model-setting");
   }
 
   private configureHardenedInput(inputEl: HTMLInputElement): void {
@@ -242,6 +267,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       }
 
       this.modelProviders = response.entries;
+      this.renderTitleGenerationModelSetting(containerEl);
       this.renderModelProviderList(containerEl);
     } catch (error) {
       new Notice("Failed to load model providers");

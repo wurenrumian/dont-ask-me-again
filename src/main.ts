@@ -316,6 +316,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       new SessionPickerModal(this.app, {
         sessions: response.entries.map((entry) => ({
           sessionId: entry.session_id,
+          title: entry.title,
           updatedAt: entry.updated_at
         })),
         activeSessionId: this.sessionManager.getActiveSessionId(),
@@ -629,11 +630,13 @@ export default class DontAskMeAgainPlugin extends Plugin {
           activeFileContent: fileContent,
           selectionText,
           instruction
-        }
+        },
+        this.settings.titleGenerationModelId
       );
       const responsesRequest = {
         model: "",
         session_id: this.sessionManager.getActiveSessionId(),
+        title_generation_model_id: this.settings.titleGenerationModelId,
         stream: true,
         input: [
           {

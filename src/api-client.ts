@@ -4,6 +4,7 @@ import { z } from "zod";
 export const toolRequestSchema = z.object({
   request_id: z.string(),
   session_id: z.string().nullable().optional(),
+  title_generation_model_id: z.string().nullable().optional(),
   input: z.object({
     active_file_path: z.string(),
     active_file_content: z.string(),
@@ -143,6 +144,7 @@ export const modelProviderDeleteResponseSchema = z.object({
 
 export const sessionEntrySchema = z.object({
   session_id: z.string().min(1),
+  title: z.string().nullable().optional(),
   updated_at: z.string().nullable().optional()
 });
 
@@ -254,11 +256,13 @@ export function parseSessionListResponse(payload: unknown): SessionListResponse 
 export function buildToolRequest(
   requestId: string,
   sessionId: string | null,
-  args: ToolCallArguments
+  args: ToolCallArguments,
+  titleGenerationModelId: string | null = null
 ) {
   return toolRequestSchema.parse({
     request_id: requestId,
     session_id: sessionId,
+    title_generation_model_id: titleGenerationModelId,
     input: {
       active_file_path: args.activeFilePath,
       active_file_content: args.activeFileContent,

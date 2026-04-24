@@ -4,6 +4,7 @@ import json
 import os
 import re
 import uuid
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -284,6 +285,34 @@ def ensure_runtime_config_synced(project_root: Path) -> None:
 
     _sync_runtime_config_from_default_entry(config_data, entries_data)
     _write_json(config_path, config_data)
+
+
+def get_model_provider_by_id(project_root: Path, model_id: str) -> ModelProviderEntry | None:
+    config_data = _load_base_config(_runtime_config_path(project_root), None)
+    entries_data = _load_entries_with_migration(project_root, config_data)
+    for item in entries_data:
+        if str(item.get("id")) == model_id:
+            return ModelProviderEntry(**item)
+    return None
+
+
+def build_runtime_config_for_model(
+    project_root: Path,
+    entry: ModelProviderEntry,
+) -> dict[str, Any]:
+    config_path = _runtime_config_path(project_root)
+    example_path = _runtime_example_path(project_root)
+    config_data = deepcopy(_load_base_config(config_path, example_path))
+    config_data.setdefault("providers", {})
+    config_data.setdefault("agents", {})
+    config_data["agents"].setdefault("defaults", {})  # type: ignore[union-attr]
+    config_data["providers"] = {
+        entry.provider: _build_provider_block(entry.provider, entry.model, entry.api_base),
+    }
+    config_data["agents"]["defaults"]["provider"] = entry.provider  # type: ignore[index]
+    config_data["agents"]["defaults"]["model"] = entry.model  # type: ignore[index]
+    config_data.pop(MODEL_PROVIDER_CONFIG_KEY, None)
+    return config_data
 
 
 # --- Model-Provider List Operations ---
