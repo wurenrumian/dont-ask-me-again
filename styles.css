@@ -24,46 +24,54 @@
 }
 
 .dama-selection-action {
-  position: fixed;
-  z-index: 1001;
+  position: absolute;
+  z-index: calc(var(--layer-popover) + 1);
 }
 
 .dama-selection-icon {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  border: 1px solid var(--background-modifier-border);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
   border-radius: 999px;
-  background: var(--background-primary);
-  color: var(--text-normal);
-  font-size: 20px;
-  font-weight: 600;
+  background: color-mix(in srgb, var(--background-primary) 92%, var(--background-secondary));
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(10px);
 }
 
 .dama-selection-icon:hover {
-  background: var(--background-modifier-hover);
+  background: color-mix(in srgb, var(--background-modifier-hover) 70%, var(--background-primary));
+  color: var(--text-normal);
 }
 
 .dama-selection-template-menu {
   display: none;
   position: absolute;
-  top: 100%;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  min-width: 300px;
-  max-width: min(400px, calc(100vw - 24px));
-  margin-top: 8px;
-  padding: 10px;
+  top: calc(100% + 8px);
+  left: var(--dama-selection-menu-left, 0px);
+  width: var(--dama-selection-menu-width, 220px);
+  padding: 6px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   background: var(--background-primary);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-l);
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  max-height: calc(36px * 5 + 4px * 4 + 12px);
+  overflow-y: auto;
+  backdrop-filter: blur(20px);
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+.dama-selection-template-menu::-webkit-scrollbar {
+  display: none;
+  /* Chrome, Safari, Edge */
 }
 
 .dama-selection-action.dama-menu-open .dama-selection-template-menu {
@@ -74,27 +82,40 @@
   display: flex;
   width: 100%;
   align-items: center;
-  justify-content: center;
-  padding: 10px 12px;
+  justify-content: flex-start;
+  padding: 8px 12px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--text-normal);
-  text-align: center;
-  font-size: 14px;
+  text-align: left;
+  font-size: var(--font-ui-small);
+  font-weight: 400;
   line-height: 1.4;
-  min-height: 42px;
+  min-height: 36px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 150ms ease;
 }
 
 .dama-template-item:hover {
   background: var(--background-modifier-hover);
+  padding-left: 14px;
+  color: var(--text-accent);
+}
+
+.dama-template-item:active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  transform: scale(0.98);
 }
 
 .dama-template-empty {
-  padding: 10px 12px;
+  padding: 8px 12px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .dama-floating-input-row {

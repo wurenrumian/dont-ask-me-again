@@ -5,6 +5,17 @@ function sanitizeFileStem(filename: string): string {
   return filename.replace(/[\\/:*?"<>|]/g, "-").trim();
 }
 
+function extractFilenameStem(filename: string): string {
+  const stem = filename.replace(/\.md$/i, "").trim();
+  if (!stem) {
+    return "untitled";
+  }
+
+  const parts = stem.split("-").map((part) => part.trim()).filter((part) => part.length > 0);
+  const basename = parts.at(-1) ?? stem;
+  return sanitizeFileStem(basename) || "untitled";
+}
+
 export function extractLeadingH1Title(markdown: string): string | null {
   const lines = markdown.split(/\r?\n/);
   const firstNonEmpty = lines.find((line) => line.trim().length > 0);
@@ -31,8 +42,20 @@ export function extractLeadingH1TitleFromCompletedLine(markdown: string): string
 }
 
 export function buildWrappedSourceLink(filename: string): string {
-  const stem = buildResolvedMarkdownPath(filename).replace(/\.md$/i, "");
+  const stem = extractFilenameStem(filename);
   return `([[${stem}]])`;
+}
+
+export function buildQuotedSelectionPrefix(selectionText: string): string {
+  const quoted = selectionText.trim();
+  return quoted.length > 0 ? `引用内容：\n${quoted}\n\n` : "";
+}
+
+export function buildQuotedSelectionInstruction(
+  selectionText: string,
+  instruction: string
+): string {
+  return `${buildQuotedSelectionPrefix(selectionText)}${instruction.trim()}`;
 }
 
 export function pickPrimaryAnswer(answer: string, thinking: string): string {

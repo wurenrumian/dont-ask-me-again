@@ -15,6 +15,8 @@ import {
 } from "./api-client";
 import {
   appendUserAndThinkingDraft,
+  buildQuotedSelectionInstruction,
+  buildQuotedSelectionPrefix,
   buildWrappedSourceLink,
   extractLeadingH1Title,
   extractLeadingH1TitleFromCompletedLine,
@@ -26,6 +28,7 @@ import {
   updateThinkingDraft
 } from "./file-actions";
 import { FloatingBox } from "./floating-ui";
+import { calculateSelectionMenuLayout } from "./selection-menu-layout";
 import {
   captureSelection,
   hasSelection,
@@ -358,9 +361,15 @@ export default class DontAskMeAgainPlugin extends Plugin {
     this.floatingBox.setSelectionActive(selected);
 
     if (includeQuoteAnchor && selected) {
-      const anchor = this.getSelectionActionAnchor();
-      if (anchor) {
-        this.floatingBox.setQuoteAnchor(anchor.left, anchor.top);
+      const layout = this.getSelectionActionAnchor();
+      if (layout) {
+        this.floatingBox.setSelectionActionLayout(
+          layout.actionLeft,
+          layout.actionTop,
+          layout.menuLeft,
+          layout.menuWidth,
+          layout.placement
+        );
       }
     }
 
@@ -369,6 +378,17 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   private applyTemplateToInput(template: string): void {
     this.floatingBox.setInputValue(template);
+    this.showFloatingBox(true);
+  }
+
+  private appendSelectionQuoteToInput(selectionText: string): void {
+    const prefix = buildQuotedSelectionPrefix(selectionText);
+    if (!prefix) {
+      return;
+    }
+
+    const currentValue = this.floatingBox.getInputValue();
+    this.floatingBox.setInputValue(`${currentValue}${prefix}`);
     this.showFloatingBox(true);
   }
 
@@ -553,16 +573,29 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
   private registerEditorTemplateMenu(): void {
     this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu) => {
-        if (this.settings.defaultTemplates.length === 0) {
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        const selection = captureSelection(editor);
+        const hasSelectedText = hasSelection(selection);
+
+        if (!hasSelectedText && this.settings.defaultTemplates.length === 0) {
           return;
         }
 
         menu.addSeparator();
+        if (hasSelectedText) {
+          menu.addItem((item) =>
+            item.setTitle("Quote Selection").onClick(() => {
+              this.appendSelectionQuoteToInput(selection.text);
+            })
+          );
+        }
         this.settings.defaultTemplates.forEach((template) => {
           menu.addItem((item) =>
             item.setTitle(`Use Template: ${template}`).onClick(() => {
-              void this.handleSubmit(template);
+              const instruction = hasSelectedText
+                ? buildQuotedSelectionInstruction(selection.text, template)
+                : template;
+              void this.handleSubmit(instruction);
             })
           );
         });
@@ -850,9 +883,14 @@ export default class DontAskMeAgainPlugin extends Plugin {
     });
   }
 
-  private getSelectionActionAnchor(): { left: number; top: number } | null {
+  private getSelectionActionAnchor(): ReturnType<typeof calculateSelectionMenuLayout> | null {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const hostRect = this.getActiveMarkdownTabRect();
+    if (!hostRect) {
       return null;
     }
 
@@ -862,15 +900,11 @@ export default class DontAskMeAgainPlugin extends Plugin {
     }
 
     const margin = 8;
-    const left = Math.min(
-      Math.max(rect.right + margin, margin),
-      window.innerWidth - 240
-    );
-    const top = Math.min(
-      Math.max(rect.bottom + margin, margin),
-      window.innerHeight - 40
-    );
-    return { left, top };
+    return calculateSelectionMenuLayout({
+      anchorLeft: rect.right - hostRect.left + margin,
+      anchorTop: rect.bottom - hostRect.top + margin,
+      hostWidth: hostRect.width
+    });
   }
 
   private scrollContextToBottom(context: ActiveEditorContext): void {

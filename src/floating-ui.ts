@@ -93,7 +93,7 @@ export class FloatingBox {
 
     this.rootEl.append(this.contextEl, inputRowEl, this.thinkingEl, this.answerEl, this.errorEl);
     this.getMountRoot().appendChild(this.rootEl);
-    document.body.appendChild(this.selectionActionEl);
+    this.getMountRoot().appendChild(this.selectionActionEl);
 
     this.applyMode();
     this.mounted = true;
@@ -154,6 +154,10 @@ export class FloatingBox {
     if (this.inputEl) {
       this.inputEl.value = value;
     }
+  }
+
+  getInputValue(): string {
+    return this.inputEl?.value ?? "";
   }
 
   setBusy(busy: boolean): void {
@@ -238,15 +242,27 @@ export class FloatingBox {
     }
 
     this.getMountRoot().appendChild(this.rootEl);
+    if (this.selectionActionEl) {
+      this.getMountRoot().appendChild(this.selectionActionEl);
+    }
   }
 
-  setQuoteAnchor(leftPx: number, topPx: number): void {
+  setSelectionActionLayout(
+    leftPx: number,
+    topPx: number,
+    menuLeftPx: number,
+    menuWidthPx: number,
+    placement: "left" | "right"
+  ): void {
     if (!this.selectionActionEl) {
       return;
     }
 
     this.selectionActionEl.style.left = `${leftPx}px`;
     this.selectionActionEl.style.top = `${topPx}px`;
+    this.selectionActionEl.style.setProperty("--dama-selection-menu-left", `${menuLeftPx - leftPx}px`);
+    this.selectionActionEl.style.setProperty("--dama-selection-menu-width", `${menuWidthPx}px`);
+    this.selectionActionEl.dataset.placement = placement;
   }
 
   updateOptions(options: FloatingBoxOptions): void {
