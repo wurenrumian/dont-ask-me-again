@@ -32,7 +32,7 @@ export class FloatingBox {
   constructor(
     private readonly plugin: Plugin,
     private options: FloatingBoxOptions
-  ) {}
+  ) { }
 
   mount(): void {
     if (this.mounted) {
@@ -252,7 +252,8 @@ export class FloatingBox {
     topPx: number,
     menuLeftPx: number,
     menuWidthPx: number,
-    placement: "left" | "right"
+    placement: "left" | "right",
+    vPlacement: "top" | "bottom"
   ): void {
     if (!this.selectionActionEl) {
       return;
@@ -263,6 +264,7 @@ export class FloatingBox {
     this.selectionActionEl.style.setProperty("--dama-selection-menu-left", `${menuLeftPx - leftPx}px`);
     this.selectionActionEl.style.setProperty("--dama-selection-menu-width", `${menuWidthPx}px`);
     this.selectionActionEl.dataset.placement = placement;
+    this.selectionActionEl.dataset.vPlacement = vPlacement;
   }
 
   updateOptions(options: FloatingBoxOptions): void {

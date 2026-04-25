@@ -2,7 +2,21 @@ import { App, Editor, TFile, normalizePath } from "obsidian";
 import type { EditorPosition } from "obsidian";
 
 function sanitizeFileStem(filename: string): string {
-  return filename.replace(/[\\/:*?"<>|]/g, "-").trim();
+  const sanitized = filename
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+
+  const normalized = sanitized.length > 0 ? sanitized : "untitled";
+
+  // Windows reserved device names cannot be used as filenames.
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(normalized)) {
+    return `${normalized}-note`;
+  }
+
+  return normalized;
 }
 
 function extractFilenameStem(filename: string): string {
@@ -11,8 +25,8 @@ function extractFilenameStem(filename: string): string {
     return "untitled";
   }
 
-  const parts = stem.split("-").map((part) => part.trim()).filter((part) => part.length > 0);
-  const basename = parts.at(-1) ?? stem;
+  const normalized = stem.replace(/\\/g, "/");
+  const basename = normalized.split("/").filter((part) => part.length > 0).at(-1) ?? normalized;
   return sanitizeFileStem(basename) || "untitled";
 }
 
@@ -130,7 +144,7 @@ function buildDraftBlock(
     `\n---\n`,
     `**我**: ${instruction.trim()}`,
     "",
-    `**Assistant**: ${assistantContent}`
+    `**Assistant**:\n\n${assistantContent}`
   ].join("\n");
 }
 

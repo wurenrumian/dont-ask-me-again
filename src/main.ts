@@ -368,7 +368,8 @@ export default class DontAskMeAgainPlugin extends Plugin {
           layout.actionTop,
           layout.menuLeft,
           layout.menuWidth,
-          layout.placement
+          layout.placement,
+          layout.vPlacement
         );
       }
     }
@@ -399,6 +400,8 @@ export default class DontAskMeAgainPlugin extends Plugin {
       "请基于我在源笔记里选中的文本生成一个新笔记。",
       "回答必须从第一行开始就是一级标题（格式：# 标题）。",
       "这个标题会被用作新笔记文件名。",
+      "标题必须是可作为文件名的纯文字描述。",
+      "不要包含路径、扩展名、Markdown 标记、引号或以下字符：\\ / : * ? \" < > |。",
       "标题后继续输出完整的 Markdown 正文内容。"
     ].join("\n");
   }
@@ -903,7 +906,9 @@ export default class DontAskMeAgainPlugin extends Plugin {
     return calculateSelectionMenuLayout({
       anchorLeft: rect.right - hostRect.left + margin,
       anchorTop: rect.bottom - hostRect.top + margin,
-      hostWidth: hostRect.width
+      anchorBottom: rect.top - hostRect.top - margin,
+      hostWidth: hostRect.width,
+      hostHeight: hostRect.height
     });
   }
 
