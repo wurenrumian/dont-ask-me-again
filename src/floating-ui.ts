@@ -325,6 +325,11 @@ export class FloatingBox {
     if (!this.imageToggleBtnEl) {
       return;
     }
+    const available = this.options.imageGenerationAvailable;
+    this.imageToggleBtnEl.classList.toggle("dama-hidden", !available);
+    if (!available) {
+      return;
+    }
     this.imageToggleBtnEl.disabled = this.busy;
     this.imageToggleBtnEl.classList.toggle("is-active", this.allowImageGeneration);
     this.imageToggleBtnEl.textContent = this.allowImageGeneration ? "允许生图 ✓" : "允许生图";

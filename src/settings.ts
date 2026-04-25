@@ -108,6 +108,9 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
   async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.addClass("dama-settings-container");
+
+    containerEl.createEl("h2", { text: "Don't Ask Me Again - Settings" });
 
     this.renderServerSettings(containerEl);
     this.renderModelProviderSection(containerEl);
@@ -116,6 +119,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
   }
 
   private renderServerSettings(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Tool Server Configuration" });
+    const desc = containerEl.createEl("p", { cls: "dama-settings-info" });
+    desc.textContent = "The local tool server powers long-term sessions, local file context, and advanced model management.";
+
     new Setting(containerEl)
       .setName("Server base URL")
       .setDesc("Tool server base URL used for session-aware AI calls.")
@@ -779,6 +786,10 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
   private renderTemplatesSection(containerEl: HTMLElement): void {
     containerEl.createEl("h3", { text: "Templates" });
+    containerEl.createEl("p", {
+      cls: "dama-settings-info",
+      text: "Templates allow you to quickly send predefined prompts to the AI based on your current selection."
+    });
 
     const templateSetting = new Setting(containerEl)
       .setName("Selection templates")
@@ -813,10 +824,11 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
   }
 
   private renderMiscSettings(containerEl: HTMLElement): void {
-    containerEl.createEl("h3", { text: "Miscellaneous" });
+    containerEl.createEl("h3", { text: "General Settings" });
 
     new Setting(containerEl)
       .setName("Show status bar")
+      .setDesc("Display the server status and current session in the Obsidian status bar.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.showStatusBar).onChange(async (value) => {
           this.plugin.settings.showStatusBar = value;
