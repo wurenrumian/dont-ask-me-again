@@ -2,15 +2,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from server.provider_config_store import (
-    apply_provider_config,
     delete_model_provider,
     list_model_providers,
     save_model_provider,
 )
+from server.provider_secret_store import get_provider_api_key
 from server.schemas import (
     ModelProviderDeleteRequest,
     ModelProviderSaveRequest,
-    ProviderConfigRequest,
 )
 
 
@@ -19,34 +18,6 @@ def _make_workspace_dir() -> Path:
     workspace.mkdir(parents=True, exist_ok=True)
     return workspace.resolve()
 
-
-def test_apply_provider_config_writes_minimax_runtime_files() -> None:
-    tmp_path = _make_workspace_dir()
-    server_dir = tmp_path / "server"
-    server_dir.mkdir(parents=True, exist_ok=True)
-    (server_dir / "nanobot.config.example.json").write_text(
-        '{"agents":{"defaults":{"workspace":"./.runtime/nanobot-workspace"}},"tools":{"web":{"enable":false},"exec":{"enable":false},"restrictToWorkspace":true}}',
-        encoding="utf-8",
-    )
-
-    result = apply_provider_config(
-        tmp_path,
-        ProviderConfigRequest(
-            provider="minimax",
-            model="MiniMax-M2.7",
-            api_base="https://api.minimaxi.com/v1",
-            api_key="dummy-key",
-        ),
-    )
-
-    assert result.provider == "minimax"
-    assert result.api_key_env == "MINIMAX_API_KEY"
-    assert result.has_api_key is True
-    assert (server_dir / "nanobot.config.json").exists()
-    assert "MINIMAX_API_KEY=dummy-key" in (server_dir / ".env").read_text(encoding="utf-8")
-
-
-# --- Tests for Model-Provider List Operations ---
 
 def test_list_model_providers_empty() -> None:
     """测试空列表返回"""
@@ -91,6 +62,69 @@ def test_save_and_list_model_provider() -> None:
     assert list_result.entries[0].provider == "openai"
     assert list_result.entries[0].model == "gpt-4.1"
     assert list_result.default_id == save_result.entry.id
+
+
+def test_save_model_provider_splits_provider_and_model_with_dedicated_key() -> None:
+    tmp_path = _make_workspace_dir()
+    server_dir = tmp_path / "server"
+    server_dir.mkdir(parents=True, exist_ok=True)
+
+    save_result = save_model_provider(
+        tmp_path,
+        ModelProviderSaveRequest(
+            provider="openai_compatible",
+            provider_name="Packy",
+            model="gpt-image-2",
+            api_base="https://www.packyapi.com/v1",
+            api_key="packy-key",
+            label="Packy image",
+            capabilities=["image"],
+        ),
+    )
+
+    assert save_result.entry.provider_name == "Packy"
+    assert save_result.entry.provider_kind == "openai_compatible"
+    assert save_result.entry.api_base == "https://www.packyapi.com/v1"
+    assert save_result.entry.capabilities == ["image"]
+    assert save_result.entry.has_api_key is True
+    assert save_result.entry.provider_id is not None
+    assert get_provider_api_key(tmp_path, save_result.entry.provider_id) == "packy-key"
+    assert not (server_dir / ".env").exists()
+
+
+def test_adds_multiple_models_under_one_provider_without_key_conflict() -> None:
+    tmp_path = _make_workspace_dir()
+    server_dir = tmp_path / "server"
+    server_dir.mkdir(parents=True, exist_ok=True)
+
+    first = save_model_provider(
+        tmp_path,
+        ModelProviderSaveRequest(
+            provider="openai_compatible",
+            provider_name="Packy",
+            model="gpt-image-2",
+            api_base="https://www.packyapi.com/v1",
+            api_key="packy-key",
+            capabilities=["image"],
+        ),
+    )
+    second = save_model_provider(
+        tmp_path,
+        ModelProviderSaveRequest(
+            provider="openai_compatible",
+            provider_id=first.entry.provider_id,
+            provider_name="Packy",
+            model="gpt-image-2-fast",
+            api_base="https://www.packyapi.com/v1",
+            capabilities=["image"],
+        ),
+    )
+
+    listed = list_model_providers(tmp_path).entries
+    assert {entry.model for entry in listed} == {"gpt-image-2", "gpt-image-2-fast"}
+    assert len({entry.provider_id for entry in listed}) == 1
+    assert all(entry.has_api_key for entry in listed)
+    assert second.entry.provider_id == first.entry.provider_id
 
 
 def test_save_multiple_providers_and_set_default() -> None:
@@ -210,7 +244,7 @@ def test_delete_nonexistent_returns_ok() -> None:
     assert delete_result.ok is True
 
 
-def test_list_bootstraps_model_providers_from_runtime_defaults() -> None:
+def test_list_does_not_bootstrap_old_runtime_provider_defaults() -> None:
     tmp_path = _make_workspace_dir()
     server_dir = tmp_path / "server"
     server_dir.mkdir(parents=True, exist_ok=True)
@@ -235,12 +269,8 @@ def test_list_bootstraps_model_providers_from_runtime_defaults() -> None:
     result = list_model_providers(tmp_path)
 
     assert result.ok is True
-    assert len(result.entries) == 1
-    assert result.entries[0].provider == "openai"
-    assert result.entries[0].model == "gpt-4.1"
-    assert result.entries[0].api_base == "https://api.openai.com/v1"
-    assert result.entries[0].is_default is True
-    assert result.default_id == result.entries[0].id
+    assert result.entries == []
+    assert result.default_id is None
 
 
 def test_save_model_provider_syncs_runtime_provider_defaults() -> None:

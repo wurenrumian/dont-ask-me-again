@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildToolRequest,
   parseSessionListResponse,
-  parseProviderConfigResponse,
   parseToolResponse
 } from "../src/api-client";
 import { SessionPickerModal, type SessionPickerItem } from "../src/session-picker-modal";
@@ -16,12 +15,27 @@ describe("buildToolRequest", () => {
       activeFileContent: "# Note",
       selectionText: "entropy",
       instruction: "Explain this."
-    }, "model-1");
+    }, "model-1", {
+      enabled: true,
+      modelId: "image-model-1",
+      maxImages: 3,
+      size: "3840x2160",
+      quality: "high",
+      outputFormat: "png"
+    });
 
     expect(request).toEqual({
       request_id: "req-1",
       session_id: null,
       title_generation_model_id: "model-1",
+      image_generation: {
+        enabled: true,
+        model_id: "image-model-1",
+        max_images: 3,
+        size: "3840x2160",
+        quality: "high",
+        output_format: "png"
+      },
       input: {
         active_file_path: "note.md",
         active_file_content: "# Note",
@@ -70,24 +84,6 @@ describe("parseToolResponse", () => {
   });
 });
 
-describe("parseProviderConfigResponse", () => {
-  it("accepts a valid provider config success payload", () => {
-    const parsed = parseProviderConfigResponse({
-      ok: true,
-      result: {
-        provider: "minimax",
-        model: "MiniMax-M2.7",
-        api_base: "https://api.minimaxi.com/v1",
-        api_key_env: "MINIMAX_API_KEY",
-        has_api_key: true
-      },
-      error: null
-    });
-
-    expect(parsed.ok).toBe(true);
-  });
-});
-
 describe("parseSessionListResponse", () => {
   it("accepts a valid nanobot session list payload", () => {
     const parsed = parseSessionListResponse({
@@ -110,6 +106,14 @@ describe("parseSessionListResponse", () => {
 describe("settings defaults", () => {
   it("disables title generation by default", () => {
     expect(PLUGIN_DEFAULT_SETTINGS.titleGenerationModelId).toBeNull();
+  });
+
+  it("does not configure image generation by default and caps one request to three images", () => {
+    expect(PLUGIN_DEFAULT_SETTINGS.imageGenerationModelId).toBeNull();
+    expect(PLUGIN_DEFAULT_SETTINGS.maxImagesPerRequest).toBe(3);
+    expect(PLUGIN_DEFAULT_SETTINGS.imageGenerationSize).toBe("auto");
+    expect(PLUGIN_DEFAULT_SETTINGS.imageGenerationQuality).toBe("auto");
+    expect(PLUGIN_DEFAULT_SETTINGS.imageGenerationOutputFormat).toBe("png");
   });
 });
 

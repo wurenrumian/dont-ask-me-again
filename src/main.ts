@@ -14,6 +14,7 @@ import {
 } from "./api-client";
 import {
   appendUserAndThinkingDraft,
+  resolveUniqueImagePath,
   buildQuotedSelectionInstruction,
   buildQuotedSelectionPrefix,
   buildWrappedSourceLink,
@@ -261,8 +262,12 @@ export default class DontAskMeAgainPlugin extends Plugin {
     return {
       templates: this.settings.defaultTemplates,
       mode: this.settings.selectionUiMode,
-      onSubmit: async ({ instruction }) => {
-        await this.handleSubmit(instruction);
+      imageGenerationAvailable: Boolean(this.settings.imageGenerationModelId),
+      onImageGenerationUnavailable: () => {
+        new Notice("请先配置生图模型。");
+      },
+      onSubmit: async ({ instruction, allowImageGeneration }) => {
+        await this.handleSubmit(instruction, { allowImageGeneration });
       },
       onTemplateFromSelection: async (template) => this.handleTemplateFromSelection(template)
     };
@@ -612,6 +617,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       context?: ActiveEditorContext;
       selectionTextOverride?: string;
       onAnswerProgress?: (answer: string) => Promise<void> | void;
+      allowImageGeneration?: boolean;
     }
   ): Promise<string | null> {
     const context = options?.context ?? this.activeContext ?? this.captureActiveContext();
@@ -641,12 +647,32 @@ export default class DontAskMeAgainPlugin extends Plugin {
           selectionText,
           instruction
         },
-        this.settings.titleGenerationModelId
+        this.settings.titleGenerationModelId,
+        options?.allowImageGeneration && this.settings.imageGenerationModelId
+          ? {
+              enabled: true,
+              modelId: this.settings.imageGenerationModelId,
+              maxImages: this.settings.maxImagesPerRequest,
+              size: this.settings.imageGenerationSize,
+              quality: this.settings.imageGenerationQuality,
+              outputFormat: this.settings.imageGenerationOutputFormat
+            }
+          : { enabled: false }
       );
       const responsesRequest = {
         model: "",
         session_id: this.sessionManager.getActiveSessionId(),
         title_generation_model_id: this.settings.titleGenerationModelId,
+        image_generation: options?.allowImageGeneration && this.settings.imageGenerationModelId
+          ? {
+              enabled: true,
+              model_id: this.settings.imageGenerationModelId,
+              max_images: this.settings.maxImagesPerRequest,
+              size: this.settings.imageGenerationSize,
+              quality: this.settings.imageGenerationQuality,
+              output_format: this.settings.imageGenerationOutputFormat
+            }
+          : { enabled: false },
         stream: true,
         input: [
           {
@@ -718,6 +744,10 @@ export default class DontAskMeAgainPlugin extends Plugin {
           renderer.pushAnswer(event.text);
           return;
         }
+        if (event.type === "image_generated") {
+          void this.saveGeneratedImageFromEvent(context, event);
+          return;
+        }
         if (event.type === "done") {
           if (event.answer && event.answer !== answer) {
             answer = event.answer;
@@ -757,6 +787,37 @@ export default class DontAskMeAgainPlugin extends Plugin {
     } finally {
       this.floatingBox.setBusy(false);
     }
+  }
+
+  private async saveGeneratedImageFromEvent(
+    context: ActiveEditorContext,
+    event: { filename: string; mimeType: string; base64: string }
+  ): Promise<void> {
+    try {
+      const sourceFolder = this.getParentFolder(context.file.path);
+      const path = await resolveUniqueImagePath(
+        this.app,
+        event.filename || "generated-image",
+        event.mimeType,
+        sourceFolder
+      );
+      const binary = this.decodeBase64ToArrayBuffer(event.base64);
+      await this.app.vault.createBinary(path, binary);
+      new Notice(`Image saved: ${path}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown image save error.";
+      this.floatingBox.setError(`Image save failed: ${message}`);
+      new Notice(`Image save failed: ${message}`);
+    }
+  }
+
+  private decodeBase64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
   }
 
   private getSelectionActionAnchor(): ReturnType<typeof calculateSelectionMenuLayout> | null {

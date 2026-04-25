@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from server.config import ServerSettings, load_runtime_env
 from server.context import ServerContext
 from server.provider_config_store import (
-    apply_provider_config,
     build_runtime_config_for_model,
     ensure_runtime_config_synced,
     get_model_provider_by_id,

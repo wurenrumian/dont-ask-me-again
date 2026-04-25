@@ -43,6 +43,47 @@ describe("invokeToolStream", () => {
     expect(events[4]).toEqual({ type: "done" });
   });
 
+  it("parses generated image SSE events", async () => {
+    const chunks = [
+      "event: image_generated\r\ndata: {\"filename\":\"cover\",\"mime_type\":\"image/png\",\"base64\":\"aGVsbG8=\"}\r\n\r\n",
+      "event: done\r\ndata: {\"ok\":true}\r\n\r\n"
+    ];
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      }
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: stream
+      })
+    );
+
+    const events: StreamEvent[] = [];
+    await invokeToolStream("http://127.0.0.1:8787", { hello: "world" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      {
+        type: "image_generated",
+        filename: "cover",
+        mimeType: "image/png",
+        base64: "aGVsbG8="
+      },
+      { type: "done" }
+    ]);
+  });
+
   it("fills missing tail from done.answer payload", async () => {
     const chunks = [
       "event: answer_delta\r\ndata: {\"text\":\"The B\"}\r\n\r\n",
@@ -192,6 +233,48 @@ describe("invokeResponsesStream", () => {
     expect(events[2]).toEqual({ type: "answer_delta", text: "lo" });
     expect(events[3]).toEqual({ type: "session", sessionId: "sess_r1" });
     expect(events[4]).toEqual({ type: "done" });
+  });
+
+  it("maps image_generated events from the Responses endpoint too", async () => {
+    const chunks = [
+      "event: image_generated\r\ndata: {\"filename\":\"cover\",\"mime_type\":\"image/png\",\"base64\":\"aGVsbG8=\"}\r\n\r\n",
+      "event: response.completed\r\ndata: {\"type\":\"response.completed\",\"response\":{\"metadata\":{\"session_id\":\"sess_r1\"}}}\r\n\r\n"
+    ];
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      }
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: stream
+      })
+    );
+
+    const events: StreamEvent[] = [];
+    await invokeResponsesStream("http://127.0.0.1:8787", { hello: "world" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      {
+        type: "image_generated",
+        filename: "cover",
+        mimeType: "image/png",
+        base64: "aGVsbG8="
+      },
+      { type: "session", sessionId: "sess_r1" },
+      { type: "done" }
+    ]);
   });
 
   it("fills missing tail from response.output_text.done", async () => {

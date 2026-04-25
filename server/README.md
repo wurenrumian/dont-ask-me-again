@@ -33,17 +33,7 @@ uv pip install --python server/.venv/Scripts/python.exe -r server/requirements.t
 Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 ```
 
-4. Configure provider secrets in `.env` (repo root or `server/.env`), for example:
-
-```dotenv
-OPENROUTER_API_KEY=sk-or-v1-...
-```
-
-## Provider Config
-
-Provider templates and env variable names are documented in:
-
-- [`server/provider-config-guide.md`](provider-config-guide.md)
+4. Configure model providers in the plugin settings UI. Provider keys are stored locally in `server/provider_secrets.json`.
 
 ## Smoke Test
 

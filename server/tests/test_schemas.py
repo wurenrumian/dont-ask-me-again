@@ -1,7 +1,7 @@
 from server.schemas import (
     InvokeRequest,
     InvokeSuccessResponse,
-    ProviderConfigRequest,
+    ModelProviderSaveRequest,
     ResponsesRequest,
 )
 
@@ -42,17 +42,20 @@ def test_success_response_requires_thinking_and_answer() -> None:
     assert payload.result.answer == "# Answer"
 
 
-def test_provider_config_request_accepts_minimax_payload() -> None:
-    payload = ProviderConfigRequest.model_validate(
+def test_model_provider_save_request_accepts_provider_and_model_payload() -> None:
+    payload = ModelProviderSaveRequest.model_validate(
         {
-            "provider": "minimax",
+            "provider": "openai_compatible",
+            "provider_name": "Packy",
             "model": "MiniMax-M2.7",
             "api_base": "https://api.minimaxi.com/v1",
             "api_key": "dummy",
+            "capabilities": ["image"],
         }
     )
 
-    assert payload.provider == "minimax"
+    assert payload.provider == "openai_compatible"
+    assert payload.provider_name == "Packy"
 
 
 def test_responses_request_accepts_openai_shape() -> None:

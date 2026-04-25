@@ -43,12 +43,7 @@ uv pip install --python server/.venv/Scripts/python.exe -r server/requirements.t
 Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 ```
 
-4. Configure provider secrets via `.env`:
-
-```dotenv
-# .env (repo root) or server/.env
-OPENROUTER_API_KEY=sk-or-v1-...
-```
+4. Configure model providers in the plugin settings UI. Provider keys are stored locally in `server/provider_secrets.json`.
 
 5. Start local API server:
 
@@ -72,7 +67,6 @@ pnpm run build
 
 ## Configuration Docs
 
-- Provider setup: [`server/provider-config-guide.md`](server/provider-config-guide.md)
 - Server operation: [`server/README.md`](server/README.md)
 
 ## Git-Ignored Local Files
@@ -80,4 +74,6 @@ pnpm run build
 - `.env`
 - `server/.env`
 - `server/nanobot.config.json`
+- `server/model_providers.json`
+- `server/provider_secrets.json`
 - `server/.venv`

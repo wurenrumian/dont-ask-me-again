@@ -4,6 +4,7 @@ import type { SelectionUiMode } from "./settings";
 
 export interface FloatingSubmitPayload {
   instruction: string;
+  allowImageGeneration: boolean;
 }
 
 export interface FloatingBoxOptions {
@@ -11,6 +12,8 @@ export interface FloatingBoxOptions {
   mode: SelectionUiMode;
   onSubmit: (payload: FloatingSubmitPayload) => Promise<void>;
   onTemplateFromSelection: (template: string) => Promise<void>;
+  imageGenerationAvailable: boolean;
+  onImageGenerationUnavailable: () => void;
 }
 
 export class FloatingBox {
@@ -18,6 +21,8 @@ export class FloatingBox {
   private inputEl: HTMLTextAreaElement | null = null;
   private errorEl: HTMLDivElement | null = null;
   private contextEl: HTMLDivElement | null = null;
+  private contextFileBtnEl: HTMLButtonElement | null = null;
+  private imageToggleBtnEl: HTMLButtonElement | null = null;
   private thinkingEl: HTMLPreElement | null = null;
   private answerEl: HTMLPreElement | null = null;
   private selectionActionEl: HTMLDivElement | null = null;
@@ -28,6 +33,7 @@ export class FloatingBox {
   private mounted = false;
   private selectionActive = false;
   private busy = false;
+  private allowImageGeneration = false;
 
   constructor(
     private readonly plugin: Plugin,
@@ -58,7 +64,22 @@ export class FloatingBox {
     this.errorEl.className = "dama-floating-error";
 
     this.contextEl = document.createElement("div");
-    this.contextEl.className = "dama-floating-context";
+    this.contextEl.className = "dama-floating-context-row";
+
+    this.contextFileBtnEl = document.createElement("button");
+    this.contextFileBtnEl.className = "dama-context-file-pill";
+    this.contextFileBtnEl.type = "button";
+    this.contextFileBtnEl.disabled = true;
+
+    this.imageToggleBtnEl = document.createElement("button");
+    this.imageToggleBtnEl.className = "dama-image-permission-toggle";
+    this.imageToggleBtnEl.type = "button";
+    this.imageToggleBtnEl.textContent = "允许生图";
+    this.imageToggleBtnEl.addEventListener("click", () => {
+      this.toggleImageGenerationPermission();
+    });
+
+    this.contextEl.append(this.contextFileBtnEl, this.imageToggleBtnEl);
 
     this.thinkingEl = document.createElement("pre");
     this.thinkingEl.className = "dama-floating-thinking dama-hidden";
@@ -108,6 +129,8 @@ export class FloatingBox {
     this.inputEl = null;
     this.errorEl = null;
     this.contextEl = null;
+    this.contextFileBtnEl = null;
+    this.imageToggleBtnEl = null;
     this.thinkingEl = null;
     this.answerEl = null;
     this.selectionActionEl = null;
@@ -165,6 +188,7 @@ export class FloatingBox {
     if (this.rootEl) {
       this.rootEl.dataset.busy = busy ? "true" : "false";
     }
+    this.updateImageToggleState();
   }
 
   setError(message: string): void {
@@ -174,10 +198,16 @@ export class FloatingBox {
   }
 
   setContextFile(path: string): void {
-    if (!this.contextEl) {
+    if (!this.contextFileBtnEl) {
       return;
     }
-    this.contextEl.textContent = path ? `@${path}` : "";
+    this.contextFileBtnEl.textContent = path ? `@ ${path}` : "";
+    this.contextFileBtnEl.title = path;
+  }
+
+  resetImageGenerationPermission(): void {
+    this.allowImageGeneration = false;
+    this.updateImageToggleState();
   }
 
   clearStreamOutput(): void {
@@ -271,6 +301,34 @@ export class FloatingBox {
     this.options = options;
     this.applyMode();
     this.renderTemplateMenu();
+    if (!this.options.imageGenerationAvailable) {
+      this.allowImageGeneration = false;
+    }
+    this.updateImageToggleState();
+  }
+
+  private toggleImageGenerationPermission(): void {
+    if (this.busy) {
+      return;
+    }
+    if (!this.options.imageGenerationAvailable) {
+      this.options.onImageGenerationUnavailable();
+      this.allowImageGeneration = false;
+      this.updateImageToggleState();
+      return;
+    }
+    this.allowImageGeneration = !this.allowImageGeneration;
+    this.updateImageToggleState();
+  }
+
+  private updateImageToggleState(): void {
+    if (!this.imageToggleBtnEl) {
+      return;
+    }
+    this.imageToggleBtnEl.disabled = this.busy;
+    this.imageToggleBtnEl.classList.toggle("is-active", this.allowImageGeneration);
+    this.imageToggleBtnEl.textContent = this.allowImageGeneration ? "允许生图 ✓" : "允许生图";
+    this.imageToggleBtnEl.setAttribute("aria-pressed", this.allowImageGeneration ? "true" : "false");
   }
 
   private applyMode(): void {
@@ -338,7 +396,14 @@ export class FloatingBox {
     this.setError("");
     this.clearInput();
     this.focusInput();
-    await this.options.onSubmit({ instruction });
+    try {
+      await this.options.onSubmit({
+        instruction,
+        allowImageGeneration: this.allowImageGeneration
+      });
+    } finally {
+      this.resetImageGenerationPermission();
+    }
   }
 
   private getMountRoot(): HTMLElement {

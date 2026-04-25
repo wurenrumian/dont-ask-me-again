@@ -18,10 +18,20 @@ class InvokeInput(BaseModel):
     instruction: str
 
 
+class ImageGenerationOptions(BaseModel):
+    enabled: bool = False
+    model_id: str | None = None
+    max_images: int = Field(default=3, ge=1, le=20)
+    size: str | None = None
+    quality: str | None = None
+    output_format: str | None = None
+
+
 class InvokeRequest(BaseModel):
     request_id: str
     session_id: str | None = None
     title_generation_model_id: str | None = None
+    image_generation: ImageGenerationOptions | None = None
     input: InvokeInput
     client: ClientInfo
 
@@ -59,6 +69,7 @@ class InvokeErrorResponse(BaseModel):
 ProviderName = Literal[
     "openrouter",
     "openai",
+    "openai_compatible",
     "anthropic",
     "gemini",
     "deepseek",
@@ -69,44 +80,21 @@ ProviderName = Literal[
 ]
 
 
-class ProviderConfigRequest(BaseModel):
-    provider: ProviderName
-    model: str = Field(min_length=1)
-    api_base: str | None = None
-    api_key: str | None = None
-
-
-class ProviderConfigResult(BaseModel):
-    provider: ProviderName
-    model: str
-    api_base: str | None = None
-    api_key_env: str | None = None
-    has_api_key: bool
-
-
-class ProviderConfigSuccessResponse(BaseModel):
-    ok: Literal[True] = True
-    result: ProviderConfigResult
-    error: None = None
-
-
-class ProviderConfigErrorResponse(BaseModel):
-    ok: Literal[False] = False
-    result: None = None
-    error: ErrorDetail
-
-
 # --- Model-Provider Configuration Schemas ---
 
 class ModelProviderEntry(BaseModel):
-    """单个 model 与 provider 的配置项"""
+    """Flattened model entry with its owning provider information."""
     id: str = Field(min_length=1, description="唯一标识符")
     provider: ProviderName
     model: str = Field(min_length=1)
     api_base: str | None = None
-    api_key_env: str | None = None  # 环境变量名，不直接存储 key
+    has_api_key: bool = False
     is_default: bool = Field(default=False)
     label: str | None = Field(default=None, description="可选的展示名称")
+    provider_id: str | None = None
+    provider_name: str | None = None
+    provider_kind: ProviderName | None = None
+    capabilities: list[str] = Field(default_factory=lambda: ["chat", "title"])
 
 
 class ModelProviderListRequest(BaseModel):
@@ -122,7 +110,7 @@ class ModelProviderListResponse(BaseModel):
 
 
 class ModelProviderSaveRequest(BaseModel):
-    """保存 model-provider 配置的请求（单个）"""
+    """Save a model and its owning provider configuration."""
     id: str | None = None  # None 表示新建
     provider: ProviderName
     model: str = Field(min_length=1)
@@ -130,13 +118,15 @@ class ModelProviderSaveRequest(BaseModel):
     api_key: str | None = None
     is_default: bool = False
     label: str | None = None
+    provider_id: str | None = None
+    provider_name: str | None = None
+    capabilities: list[str] | None = None
 
 
 class ModelProviderSaveResponse(BaseModel):
     """保存结果响应"""
     ok: Literal[True] = True
     entry: ModelProviderEntry
-    api_key_env: str | None = None  # 返回环境变量名
     api_key_stored: bool = False
 
 
@@ -169,3 +159,4 @@ class ResponsesRequest(BaseModel):
     metadata: dict[str, Any] | None = None
     session_id: str | None = None
     title_generation_model_id: str | None = None
+    image_generation: ImageGenerationOptions | None = None

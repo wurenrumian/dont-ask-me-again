@@ -136,7 +136,14 @@ def create_router(ctx: ServerContext) -> APIRouter:
         prompt = build_chat_prompt(payload, session)
 
         try:
-            raw_output = await ctx.runtime.run_turn(prompt, session.session_id)
+            if payload.image_generation and payload.image_generation.enabled:
+                raw_output = await ctx.runtime.run_turn(
+                    prompt,
+                    session.session_id,
+                    image_generation=payload.image_generation,
+                )
+            else:
+                raw_output = await ctx.runtime.run_turn(prompt, session.session_id)
             thinking, answer = split_output(raw_output)
             result = {
                 "session_id": session.session_id,
@@ -185,16 +192,33 @@ def create_router(ctx: ServerContext) -> APIRouter:
             try:
                 parser = TaggedStreamParser()
                 delta_queue: asyncio.Queue[str | None] = asyncio.Queue()
+                image_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
 
                 async def on_delta(delta: str) -> None:
                     await delta_queue.put(delta)
 
-                stream_task = asyncio.create_task(
-                    ctx.runtime.run_turn_stream(prompt, session.session_id, on_delta)
-                )
+                async def on_image(image_payload: dict[str, str]) -> None:
+                    await image_queue.put(image_payload)
+
+                if payload.image_generation and payload.image_generation.enabled:
+                    stream_task = asyncio.create_task(
+                        ctx.runtime.run_turn_stream(
+                            prompt,
+                            session.session_id,
+                            on_delta,
+                            image_generation=payload.image_generation,
+                            on_image=on_image,
+                        )
+                    )
+                else:
+                    stream_task = asyncio.create_task(
+                        ctx.runtime.run_turn_stream(prompt, session.session_id, on_delta)
+                    )
 
                 while True:
-                    if stream_task.done() and delta_queue.empty():
+                    while not image_queue.empty():
+                        yield to_sse_event("image_generated", await image_queue.get())
+                    if stream_task.done() and delta_queue.empty() and image_queue.empty():
                         break
                     try:
                         delta = await asyncio.wait_for(delta_queue.get(), timeout=0.2)
@@ -206,6 +230,8 @@ def create_router(ctx: ServerContext) -> APIRouter:
                         yield to_sse_event(event_type, {"text": text})
 
                 raw_output = await stream_task
+                while not image_queue.empty():
+                    yield to_sse_event("image_generated", await image_queue.get())
                 for event_type, text in parser.flush():
                     yield to_sse_event(event_type, {"text": text})
 
@@ -253,7 +279,7 @@ def create_router(ctx: ServerContext) -> APIRouter:
                 input_text,
                 payload.title_generation_model_id,
             )
-        prompt = build_responses_prompt(input_text, session)
+        prompt = build_responses_prompt(input_text, session, payload.image_generation)
 
         if payload.stream:
             async def event_generator():
@@ -280,13 +306,31 @@ def create_router(ctx: ServerContext) -> APIRouter:
                     async def on_delta(delta: str) -> None:
                         await delta_queue.put(delta)
 
-                    stream_task = asyncio.create_task(
-                        ctx.runtime.run_turn_stream(prompt, session.session_id, on_delta)
-                    )
+                    image_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
+
+                    async def on_image(image_payload: dict[str, str]) -> None:
+                        await image_queue.put(image_payload)
+
+                    if payload.image_generation and payload.image_generation.enabled:
+                        stream_task = asyncio.create_task(
+                            ctx.runtime.run_turn_stream(
+                                prompt,
+                                session.session_id,
+                                on_delta,
+                                image_generation=payload.image_generation,
+                                on_image=on_image,
+                            )
+                        )
+                    else:
+                        stream_task = asyncio.create_task(
+                            ctx.runtime.run_turn_stream(prompt, session.session_id, on_delta)
+                        )
 
                     answer_buffer = ""
                     while True:
-                        if stream_task.done() and delta_queue.empty():
+                        while not image_queue.empty():
+                            yield to_sse_event("image_generated", await image_queue.get())
+                        if stream_task.done() and delta_queue.empty() and image_queue.empty():
                             break
                         try:
                             delta = await asyncio.wait_for(delta_queue.get(), timeout=0.2)
@@ -308,6 +352,8 @@ def create_router(ctx: ServerContext) -> APIRouter:
                             )
 
                     raw_output = await stream_task
+                    while not image_queue.empty():
+                        yield to_sse_event("image_generated", await image_queue.get())
                     for event_type, text in parser.flush():
                         if event_type != "answer_delta" or not text:
                             continue
@@ -381,7 +427,14 @@ def create_router(ctx: ServerContext) -> APIRouter:
             )
 
         try:
-            raw_output = await ctx.runtime.run_turn(prompt, session.session_id)
+            if payload.image_generation and payload.image_generation.enabled:
+                raw_output = await ctx.runtime.run_turn(
+                    prompt,
+                    session.session_id,
+                    image_generation=payload.image_generation,
+                )
+            else:
+                raw_output = await ctx.runtime.run_turn(prompt, session.session_id)
             thinking, answer = split_output(raw_output)
             ctx.session_store.append_turn(
                 session.session_id,

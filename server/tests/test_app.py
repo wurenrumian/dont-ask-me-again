@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from server import app as app_module
 from server.routes import chat as chat_routes
-from server.schemas import ProviderConfigResult
 
 
 client = TestClient(app_module.app)
@@ -94,36 +93,6 @@ def test_invoke_returns_config_error_when_runtime_config_missing(monkeypatch) ->
     assert body["error"]["retryable"] is False
 
 
-def test_provider_config_endpoint_returns_saved_summary(monkeypatch) -> None:
-    def fake_apply_provider_config(project_root, payload) -> ProviderConfigResult:
-        assert payload.provider == "minimax"
-        return ProviderConfigResult(
-            provider="minimax",
-            model="MiniMax-M2.7",
-            api_base="https://api.minimaxi.com/v1",
-            api_key_env="MINIMAX_API_KEY",
-            has_api_key=True,
-        )
-
-    monkeypatch.setattr(app_module, "apply_provider_config", fake_apply_provider_config)
-
-    response = client.post(
-        "/api/v1/provider-config",
-        json={
-            "provider": "minimax",
-            "model": "MiniMax-M2.7",
-            "api_base": "https://api.minimaxi.com/v1",
-            "api_key": "dummy-key",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["result"]["provider"] == "minimax"
-    assert body["result"]["api_key_env"] == "MINIMAX_API_KEY"
-
-
 def test_chat_stream_emits_reasoning_and_answer_events(monkeypatch) -> None:
     async def fake_run_turn_stream(prompt: str, session_id: str, on_delta) -> str:
         await on_delta("<thinking>reasoning ")
@@ -157,6 +126,60 @@ def test_chat_stream_emits_reasoning_and_answer_events(monkeypatch) -> None:
     assert "event: answer_delta" in body
     assert "final reply" in body
     assert "event: done" in body
+
+
+def test_chat_stream_forwards_generated_image_events(monkeypatch) -> None:
+    async def fake_run_turn_stream(
+        prompt: str,
+        session_id: str,
+        on_delta,
+        *,
+        image_generation=None,
+        on_image=None,
+    ) -> str:
+        assert image_generation is not None
+        assert image_generation.enabled is True
+        assert image_generation.max_images == 2
+        assert on_image is not None
+        await on_image(
+            {
+                "filename": "cover",
+                "mime_type": "image/png",
+                "base64": "aGVsbG8=",
+            }
+        )
+        await on_delta("<answer>![[cover.png]]</answer>")
+        return "<thinking></thinking><answer>![[cover.png]]</answer>"
+
+    monkeypatch.setattr(app_module.runtime, "run_turn_stream", fake_run_turn_stream)
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={
+            "request_id": "req-stream-1",
+            "session_id": None,
+            "image_generation": {
+                "enabled": True,
+                "model_id": "image-model-1",
+                "max_images": 2,
+            },
+            "input": {
+                "active_file_path": "note.md",
+                "active_file_content": "# Note",
+                "selection_text": "",
+                "instruction": "Generate a cover.",
+            },
+            "client": {"name": "dont-ask-me-again", "version": "0.1.0"},
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: image_generated" in body
+    assert '"filename": "cover"' in body
+    assert '"base64": "aGVsbG8="' in body
+    assert "event: answer_delta" in body
 
 
 def test_list_sessions_reads_nanobot_workspace(monkeypatch, tmp_path) -> None:
@@ -400,6 +423,55 @@ def test_openai_responses_stream_emits_delta_and_completed(monkeypatch) -> None:
     assert "event: response.output_text.delta" in body
     assert "hello world" in body
     assert "event: response.completed" in body
+
+
+def test_openai_responses_stream_forwards_generated_image_events(monkeypatch) -> None:
+    async def fake_run_turn_stream(
+        prompt: str,
+        session_id: str,
+        on_delta,
+        *,
+        image_generation=None,
+        on_image=None,
+    ) -> str:
+        assert "generate_image" in prompt
+        assert image_generation is not None
+        assert image_generation.enabled is True
+        assert image_generation.max_images == 2
+        assert on_image is not None
+        await on_image(
+            {
+                "filename": "cover",
+                "mime_type": "image/png",
+                "base64": "aGVsbG8=",
+            }
+        )
+        await on_delta("<answer>![[cover.png]]</answer>")
+        return "<thinking></thinking><answer>![[cover.png]]</answer>"
+
+    monkeypatch.setattr(app_module.runtime, "run_turn_stream", fake_run_turn_stream)
+
+    with client.stream(
+        "POST",
+        "/v1/responses",
+        json={
+            "model": "gpt-5-codex",
+            "input": "generate an image",
+            "stream": True,
+            "image_generation": {
+                "enabled": True,
+                "model_id": "image-model-1",
+                "max_images": 2,
+            },
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: image_generated" in body
+    assert '"filename": "cover"' in body
+    assert '"base64": "aGVsbG8="' in body
+    assert "event: response.output_text.delta" in body
 
 
 def test_openai_responses_previous_response_id_reuses_session(monkeypatch) -> None:

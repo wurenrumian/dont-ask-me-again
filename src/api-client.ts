@@ -5,6 +5,14 @@ export const toolRequestSchema = z.object({
   request_id: z.string(),
   session_id: z.string().nullable().optional(),
   title_generation_model_id: z.string().nullable().optional(),
+  image_generation: z.object({
+    enabled: z.boolean(),
+    model_id: z.string().min(1).optional(),
+    max_images: z.number().int().min(1).max(20).optional(),
+    size: z.string().min(1).optional(),
+    quality: z.string().min(1).optional(),
+    output_format: z.string().min(1).optional()
+  }).optional(),
   input: z.object({
     active_file_path: z.string(),
     active_file_content: z.string(),
@@ -41,6 +49,7 @@ export const toolResponseSchema = z.union([toolSuccessSchema, toolErrorSchema]);
 export const providerNameSchema = z.enum([
   "openrouter",
   "openai",
+  "openai_compatible",
   "anthropic",
   "gemini",
   "deepseek",
@@ -50,50 +59,20 @@ export const providerNameSchema = z.enum([
   "ollama"
 ]);
 
-export const providerConfigRequestSchema = z.object({
-  provider: providerNameSchema,
-  model: z.string().min(1),
-  api_base: z.string().trim().optional().nullable(),
-  api_key: z.string().optional().nullable()
-});
-
-const providerConfigSuccessSchema = z.object({
-  ok: z.literal(true),
-  result: z.object({
-    provider: providerNameSchema,
-    model: z.string(),
-    api_base: z.string().nullable(),
-    api_key_env: z.string().nullable(),
-    has_api_key: z.boolean()
-  }),
-  error: z.null()
-});
-
-const providerConfigErrorSchema = z.object({
-  ok: z.literal(false),
-  result: z.null(),
-  error: z.object({
-    code: z.string(),
-    message: z.string(),
-    retryable: z.boolean()
-  })
-});
-
-export const providerConfigResponseSchema = z.union([
-  providerConfigSuccessSchema,
-  providerConfigErrorSchema
-]);
-
 // --- Model-Provider Configuration Schemas ---
 
 export const modelProviderEntrySchema = z.object({
   id: z.string().min(1),
   provider: providerNameSchema,
+  provider_id: z.string().nullable().optional(),
+  provider_name: z.string().nullable().optional(),
+  provider_kind: providerNameSchema.nullable().optional(),
   model: z.string().min(1),
   api_base: z.string().nullable().optional(),
-  api_key_env: z.string().nullable().optional(),
+  has_api_key: z.boolean().optional().default(false),
   is_default: z.boolean(),
-  label: z.string().nullable().optional()
+  label: z.string().nullable().optional(),
+  capabilities: z.array(z.string()).optional().default(["chat", "title"])
 });
 
 export const modelProviderListResponseSchema = z.object({
@@ -105,17 +84,19 @@ export const modelProviderListResponseSchema = z.object({
 export const modelProviderSaveRequestSchema = z.object({
   id: z.string().nullable().optional(),
   provider: providerNameSchema,
+  provider_id: z.string().nullable().optional(),
+  provider_name: z.string().nullable().optional(),
   model: z.string().min(1),
   api_base: z.string().nullable().optional(),
   api_key: z.string().nullable().optional(),
   is_default: z.boolean().default(false),
-  label: z.string().nullable().optional()
+  label: z.string().nullable().optional(),
+  capabilities: z.array(z.string()).nullable().optional()
 });
 
 const modelProviderSaveSuccessSchema = z.object({
   ok: z.literal(true),
   entry: modelProviderEntrySchema,
-  api_key_env: z.string().nullable(),
   api_key_stored: z.boolean()
 });
 
@@ -155,7 +136,6 @@ export const sessionListResponseSchema = z.object({
 
 export type ToolResponse = z.infer<typeof toolResponseSchema>;
 export type ProviderName = z.infer<typeof providerNameSchema>;
-export type ProviderConfigResponse = z.infer<typeof providerConfigResponseSchema>;
 export type ModelProviderEntry = z.infer<typeof modelProviderEntrySchema>;
 export type ModelProviderListResponse = z.infer<typeof modelProviderListResponseSchema>;
 export type ModelProviderSaveRequest = z.infer<typeof modelProviderSaveRequestSchema>;
@@ -169,10 +149,20 @@ export interface ToolCallArguments {
   instruction: string;
 }
 
+export interface ImageGenerationRequest {
+  enabled: boolean;
+  modelId?: string;
+  maxImages?: number;
+  size?: string;
+  quality?: string;
+  outputFormat?: string;
+}
+
 export type StreamEvent =
   | { type: "session"; sessionId: string }
   | { type: "thinking_delta"; text: string }
   | { type: "answer_delta"; text: string }
+  | { type: "image_generated"; filename: string; mimeType: string; base64: string }
   | { type: "done"; answer?: string }
   | {
       type: "error";
@@ -333,10 +323,6 @@ export function parseToolResponse(payload: unknown): ToolResponse {
   return toolResponseSchema.parse(payload);
 }
 
-export function parseProviderConfigResponse(payload: unknown): ProviderConfigResponse {
-  return providerConfigResponseSchema.parse(payload);
-}
-
 export function parseModelProviderListResponse(payload: unknown): ModelProviderListResponse {
   return modelProviderListResponseSchema.parse(payload);
 }
@@ -353,12 +339,25 @@ export function buildToolRequest(
   requestId: string,
   sessionId: string | null,
   args: ToolCallArguments,
-  titleGenerationModelId: string | null = null
+  titleGenerationModelId: string | null = null,
+  imageGeneration?: ImageGenerationRequest
 ) {
   return toolRequestSchema.parse({
     request_id: requestId,
     session_id: sessionId,
     title_generation_model_id: titleGenerationModelId,
+    ...(imageGeneration
+      ? {
+          image_generation: {
+            enabled: imageGeneration.enabled,
+            ...(imageGeneration.modelId ? { model_id: imageGeneration.modelId } : {}),
+            ...(imageGeneration.maxImages ? { max_images: imageGeneration.maxImages } : {}),
+            ...(imageGeneration.size ? { size: imageGeneration.size } : {}),
+            ...(imageGeneration.quality ? { quality: imageGeneration.quality } : {}),
+            ...(imageGeneration.outputFormat ? { output_format: imageGeneration.outputFormat } : {})
+          }
+        }
+      : {}),
     input: {
       active_file_path: args.activeFilePath,
       active_file_content: args.activeFileContent,
@@ -402,6 +401,13 @@ export async function invokeToolStream(
       const deltaText = String(data.text ?? "");
       answerAccumulated += deltaText;
       onEvent({ type: "answer_delta", text: deltaText });
+    } else if (eventName === "image_generated") {
+      onEvent({
+        type: "image_generated",
+        filename: String(data.filename ?? ""),
+        mimeType: String(data.mime_type ?? "image/png"),
+        base64: String(data.base64 ?? "")
+      });
     } else if (eventName === "done") {
       const finalAnswer = String(data.answer ?? "");
       const reconciled = reconcileFinalAnswerDelta(answerAccumulated, finalAnswer);
@@ -456,6 +462,15 @@ export async function invokeResponsesStream(
       }
       return false;
     }
+    if (eventName === "image_generated") {
+      onEvent({
+        type: "image_generated",
+        filename: String(data.filename ?? ""),
+        mimeType: String(data.mime_type ?? "image/png"),
+        base64: String(data.base64 ?? "")
+      });
+      return false;
+    }
     if (eventName === "response.output_text.delta") {
       const deltaText = String(data.delta ?? "");
       answerAccumulated += deltaText;
@@ -500,19 +515,6 @@ export async function invokeResponsesStream(
     }
     return false;
   });
-}
-
-export async function saveProviderConfig(
-  baseUrl: string,
-  payload: z.input<typeof providerConfigRequestSchema>
-): Promise<ProviderConfigResponse> {
-  const parsedPayload = providerConfigRequestSchema.parse(payload);
-  const json = await requestJson(
-    buildApiUrl(baseUrl, "/api/v1/provider-config"),
-    "POST",
-    parsedPayload
-  );
-  return parseProviderConfigResponse(json);
 }
 
 // --- Model-Provider Configuration API ---

@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from server.config import ServerSettings
+from server.schemas import ImageGenerationOptions
+from server.services.image_generation import ImagePayload, ImageGenerationTool, generate_image_with_model
+from loguru import logger
 
 class NanobotAdapter:
     def __init__(self, project_root: Path, settings: ServerSettings) -> None:
@@ -18,6 +21,8 @@ class NanobotAdapter:
         prompt: str,
         session_id: str,
         config_path: Path | None = None,
+        image_generation: ImageGenerationOptions | None = None,
+        on_image: Callable[[ImagePayload], Awaitable[None]] | None = None,
     ) -> str:
         resolved_config_path = config_path or self._resolve_config_path_or_raise()
         from nanobot import Nanobot
@@ -29,6 +34,7 @@ class NanobotAdapter:
             config_path=str(resolved_config_path),
             workspace=workspace,
         )
+        self._configure_image_generation_tool(bot, image_generation, on_image)
         result = await bot.run(
             prompt,
             session_key=f"{self.settings.nanobot_session_prefix}:{session_id}",
@@ -41,6 +47,8 @@ class NanobotAdapter:
         session_id: str,
         on_delta: Callable[[str], Awaitable[None]],
         config_path: Path | None = None,
+        image_generation: ImageGenerationOptions | None = None,
+        on_image: Callable[[ImagePayload], Awaitable[None]] | None = None,
     ) -> str:
         resolved_config_path = config_path or self._resolve_config_path_or_raise()
         from nanobot import Nanobot
@@ -61,12 +69,49 @@ class NanobotAdapter:
             config_path=str(resolved_config_path),
             workspace=workspace,
         )
+        self._configure_image_generation_tool(bot, image_generation, on_image)
         result = await bot.run(
             prompt,
             session_key=f"{self.settings.nanobot_session_prefix}:{session_id}",
             hooks=[_StreamingHook()],
         )
         return result.content
+
+    def _configure_image_generation_tool(
+        self,
+        bot,
+        image_generation: ImageGenerationOptions | None,
+        on_image: Callable[[ImagePayload], Awaitable[None]] | None,
+    ) -> None:
+        if not image_generation or not image_generation.enabled or not image_generation.model_id:
+            logger.debug("[image] generate_image tool not registered for this turn")
+            return
+
+        async def generate(prompt: str, filename: str) -> ImagePayload:
+            return await generate_image_with_model(
+                project_root=self.project_root,
+                model_id=image_generation.model_id or "",
+                prompt=prompt,
+                filename=filename,
+                options=image_generation,
+            )
+
+        async def emit(payload: ImagePayload) -> None:
+            if on_image:
+                await on_image(payload)
+
+        bot._loop.tools.register(
+            ImageGenerationTool(
+                options=image_generation,
+                generate_image=generate,
+                emit_image=emit,
+            )
+        )
+        logger.info(
+            "[image] registered generate_image tool model_id={} max_images={}",
+            image_generation.model_id,
+            image_generation.max_images,
+        )
 
     def run_turn_sync(self, prompt: str, session_id: str) -> str:
         return asyncio.run(self.run_turn(prompt, session_id))

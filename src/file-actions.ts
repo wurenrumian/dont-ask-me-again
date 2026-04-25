@@ -170,6 +170,55 @@ export function buildResolvedMarkdownPath(filename: string): string {
   return `${stem}.md`;
 }
 
+function imageExtensionFromMimeType(mimeType: string): string {
+  const normalized = mimeType.toLowerCase().split(";")[0].trim();
+  if (normalized === "image/jpeg" || normalized === "image/jpg") {
+    return "jpg";
+  }
+  if (normalized === "image/webp") {
+    return "webp";
+  }
+  if (normalized === "image/gif") {
+    return "gif";
+  }
+  return "png";
+}
+
+export function buildResolvedImagePath(filename: string, mimeType: string): string {
+  const extension = imageExtensionFromMimeType(mimeType);
+  const withoutExtension = filename.replace(/\.(png|jpe?g|webp|gif)$/i, "");
+  const stem = sanitizeFileStem(withoutExtension) || "generated-image";
+  return `${stem}.${extension}`;
+}
+
+export async function resolveUniqueImagePath(
+  app: App,
+  filename: string,
+  mimeType: string,
+  directory = ""
+): Promise<string> {
+  const baseName = buildResolvedImagePath(filename, mimeType);
+  const basePath = directory.trim().length > 0
+    ? normalizePath(`${directory}/${baseName}`)
+    : normalizePath(baseName);
+  const dotIndex = basePath.lastIndexOf(".");
+  const parsed = dotIndex >= 0 ? basePath.slice(0, dotIndex) : basePath;
+  const extension = dotIndex >= 0 ? basePath.slice(dotIndex) : "";
+  let attempt = 0;
+
+  while (true) {
+    const candidate = normalizePath(
+      attempt === 0 ? basePath : `${parsed}-${attempt}${extension}`
+    );
+
+    if (!app.vault.getAbstractFileByPath(candidate)) {
+      return candidate;
+    }
+
+    attempt += 1;
+  }
+}
+
 export function buildSourceReplacement(filename: string, selectionText: string): string {
   const stem = buildResolvedMarkdownPath(filename).replace(/\.md$/i, "");
   const alias = selectionText.trim();

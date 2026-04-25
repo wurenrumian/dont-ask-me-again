@@ -20,6 +20,11 @@ export interface DontAskMeAgainSettings {
   serverStartupCommand: string;
   serverStartupCwd: string;
   titleGenerationModelId: string | null;
+  imageGenerationModelId: string | null;
+  maxImagesPerRequest: number;
+  imageGenerationSize: string;
+  imageGenerationQuality: string;
+  imageGenerationOutputFormat: string;
   defaultTemplates: string[];
   selectionUiMode: SelectionUiMode;
   apiFormatMode: ApiFormatMode;
@@ -36,6 +41,11 @@ export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
     "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787",
   serverStartupCwd: "",
   titleGenerationModelId: null,
+  imageGenerationModelId: null,
+  maxImagesPerRequest: 3,
+  imageGenerationSize: "auto",
+  imageGenerationQuality: "auto",
+  imageGenerationOutputFormat: "png",
   defaultTemplates: [
     "Explain this in detail.",
     "Give me a concrete example.",
@@ -52,16 +62,20 @@ export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
 interface ModelProviderFormState {
   isEditing: boolean;
   editingId: string | null;
+  providerId: string | null;
+  providerName: string;
   provider: ProviderName;
   model: string;
   apiBase: string;
   apiKey: string;
   label: string;
   isDefault: boolean;
+  capabilities: string[];
 }
 
 const ALL_PROVIDER_OPTIONS: { value: ProviderName; label: string }[] = [
   { value: "openai", label: "OpenAI" },
+  { value: "openai_compatible", label: "OpenAI Compatible" },
   { value: "anthropic", label: "Anthropic" },
   { value: "gemini", label: "Google Gemini" }
 ];
@@ -79,12 +93,15 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     return {
       isEditing: false,
       editingId: null,
+      providerId: null,
+      providerName: "",
       provider: "openai",
       model: "",
       apiBase: "",
       apiKey: "",
       label: "",
-      isDefault: false
+      isDefault: false,
+      capabilities: ["chat", "title"]
     };
   }
 
@@ -202,6 +219,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     });
 
     this.renderTitleGenerationModelSetting(sectionEl);
+    this.renderImageGenerationSettings(sectionEl);
 
     // 加载现有配置
     this.loadModelProviders(sectionEl);
@@ -226,6 +244,91 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       });
 
     setting.settingEl.addClass("title-generation-model-setting");
+  }
+
+  private renderImageGenerationSettings(containerEl: HTMLElement): void {
+    containerEl.querySelector(".image-generation-model-setting")?.remove();
+    containerEl.querySelector(".image-generation-limit-setting")?.remove();
+    containerEl.querySelector(".image-generation-size-setting")?.remove();
+    containerEl.querySelector(".image-generation-quality-setting")?.remove();
+    containerEl.querySelector(".image-generation-format-setting")?.remove();
+
+    const modelSetting = new Setting(containerEl)
+      .setName("Image generation model")
+      .setDesc("Choose a configured model for one-request image generation permission.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Disabled");
+        for (const entry of this.modelProviders) {
+          dropdown.addOption(entry.id, entry.label || entry.model);
+        }
+        dropdown.setValue(this.plugin.settings.imageGenerationModelId ?? "");
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.imageGenerationModelId = value || null;
+          await this.plugin.saveSettings();
+        });
+      });
+    modelSetting.settingEl.addClass("image-generation-model-setting");
+
+    const limitSetting = new Setting(containerEl)
+      .setName("Max images per request")
+      .setDesc("Strict cap for agent image generation in one chat request.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "20";
+        text
+          .setValue(String(this.plugin.settings.maxImagesPerRequest))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.maxImagesPerRequest = Number.isFinite(parsed)
+              ? Math.max(1, Math.min(20, parsed))
+              : 3;
+            await this.plugin.saveSettings();
+          });
+      });
+    limitSetting.settingEl.addClass("image-generation-limit-setting");
+
+    const sizeSetting = new Setting(containerEl)
+      .setName("Image size")
+      .setDesc("Passed to the image provider. Use auto for standard OpenAI behavior, or a provider-supported size.")
+      .addText((text) => {
+        text
+          .setPlaceholder("auto")
+          .setValue(this.plugin.settings.imageGenerationSize)
+          .onChange(async (value) => {
+            this.plugin.settings.imageGenerationSize = value.trim() || DEFAULT_SETTINGS.imageGenerationSize;
+            await this.plugin.saveSettings();
+          });
+      });
+    sizeSetting.settingEl.addClass("image-generation-size-setting");
+
+    const qualitySetting = new Setting(containerEl)
+      .setName("Image quality")
+      .setDesc("Passed to the image provider, for example auto, high, medium, low, hd, or standard.")
+      .addText((text) => {
+        text
+          .setPlaceholder("auto")
+          .setValue(this.plugin.settings.imageGenerationQuality)
+          .onChange(async (value) => {
+            this.plugin.settings.imageGenerationQuality = value.trim() || DEFAULT_SETTINGS.imageGenerationQuality;
+            await this.plugin.saveSettings();
+          });
+      });
+    qualitySetting.settingEl.addClass("image-generation-quality-setting");
+
+    const formatSetting = new Setting(containerEl)
+      .setName("Image output format")
+      .setDesc("Passed to the image provider, usually png, jpeg, or webp.")
+      .addText((text) => {
+        text
+          .setPlaceholder("png")
+          .setValue(this.plugin.settings.imageGenerationOutputFormat)
+          .onChange(async (value) => {
+            this.plugin.settings.imageGenerationOutputFormat = value.trim() || DEFAULT_SETTINGS.imageGenerationOutputFormat;
+            await this.plugin.saveSettings();
+          });
+      });
+    formatSetting.settingEl.addClass("image-generation-format-setting");
   }
 
   private configureHardenedInput(inputEl: HTMLInputElement): void {
@@ -266,6 +369,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
       this.modelProviders = response.entries;
       this.renderTitleGenerationModelSetting(containerEl);
+      this.renderImageGenerationSettings(containerEl);
       this.renderModelProviderList(containerEl);
     } catch (error) {
       new Notice("Failed to load model providers");
@@ -302,9 +406,35 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
         text: "No model providers configured. Add one above."
       });
     } else {
+      const groups = new Map<string, ModelProviderEntry[]>();
       for (const entry of this.modelProviders) {
-        this.renderModelProviderCard(cardsContainer, entry);
+        const key = entry.provider_id || `${entry.provider}:${entry.api_base || ""}`;
+        groups.set(key, [...(groups.get(key) || []), entry]);
       }
+      for (const entries of groups.values()) {
+        this.renderProviderGroup(cardsContainer, entries);
+      }
+    }
+  }
+
+  private renderProviderGroup(container: HTMLElement, entries: ModelProviderEntry[]): void {
+    const first = entries[0];
+    const group = container.createDiv({ cls: "model-provider-group" });
+    const header = group.createDiv({ cls: "model-provider-group-header" });
+    header.createSpan({
+      cls: "mp-provider-badge",
+      text: (first.provider_name || first.provider).toUpperCase()
+    });
+    header.createDiv({
+      cls: "mp-card-detail",
+      text: `${first.provider_kind || first.provider}${first.api_base ? ` @ ${first.api_base}` : ""}`
+    });
+    header.createDiv({
+      cls: "mp-card-key-status",
+      text: first.has_api_key ? "API key: saved" : "API key: missing"
+    });
+    for (const entry of entries) {
+      this.renderModelProviderCard(group, entry);
     }
   }
 
@@ -320,7 +450,7 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     // Header row: provider badge + model name
     const header = card.createDiv({ cls: "mp-card-header" });
 
-    header.createSpan({ cls: "mp-provider-badge", text: entry.provider.toUpperCase() });
+    header.createSpan({ cls: "mp-provider-badge", text: (entry.provider_kind || entry.provider).toUpperCase() });
 
     if (entry.is_default) {
       header.createSpan({ cls: "mp-default-badge", text: "DEFAULT" });
@@ -330,20 +460,9 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
     // Model detail
     const detail = card.createDiv({ cls: "mp-card-detail" });
-    if (entry.api_base) {
-      detail.setText(`${entry.model} @ ${entry.api_base}`);
-    } else {
-      detail.setText(entry.model);
-    }
+    detail.setText(`${entry.model} · ${(entry.capabilities || ["chat", "title"]).join(", ")}`);
 
     // API key status
-    if (entry.api_key_env) {
-      card.createDiv({
-        cls: "mp-card-key-status",
-        text: `API key: ${entry.api_key_env}`
-      });
-    }
-
     // Action buttons
     const actions = card.createDiv({ cls: "mp-card-actions" });
 
@@ -364,12 +483,15 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
     this.formState = {
       isEditing: true,
       editingId: entry.id,
-      provider: entry.provider,
+      providerId: entry.provider_id || null,
+      providerName: entry.provider_name || entry.provider,
+      provider: entry.provider_kind || entry.provider,
       model: entry.model,
       apiBase: entry.api_base || "",
       apiKey: "",  // 不回填 API key
       label: entry.label || "",
-      isDefault: entry.is_default
+      isDefault: entry.is_default,
+      capabilities: entry.capabilities || ["chat", "title"]
     };
     this.showFormModal(entry);
   }
@@ -387,10 +509,41 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
     const form = modal.contentEl.createEl("form");
 
+    const providerGroups = Array.from(
+      new Map(
+        this.modelProviders
+          .filter((entry) => entry.provider_id)
+          .map((entry) => [entry.provider_id as string, entry])
+      ).values()
+    );
+
+    if (!existingEntry && providerGroups.length > 0) {
+      new Setting(form)
+        .setName("Provider account")
+        .setDesc("Add this model under an existing provider, or create a new provider.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("", "New provider");
+          for (const entry of providerGroups) {
+            dropdown.addOption(entry.provider_id || "", entry.provider_name || entry.provider);
+          }
+          dropdown.setValue(this.formState.providerId || "");
+          dropdown.onChange((value) => {
+            this.formState.providerId = value || null;
+            const selected = providerGroups.find((entry) => entry.provider_id === value);
+            if (selected) {
+              this.formState.provider = selected.provider_kind || selected.provider;
+              this.formState.providerName = selected.provider_name || selected.provider;
+              this.formState.apiBase = selected.api_base || "";
+              this.formState.apiKey = "";
+            }
+          });
+        });
+    }
+
     // Provider
     new Setting(form)
-      .setName("Provider")
-      .setDesc("AI provider name")
+      .setName("Provider kind")
+      .setDesc("SDK or protocol used by this provider account")
       .addDropdown((dropdown) => {
         for (const opt of ALL_PROVIDER_OPTIONS) {
           dropdown.addOption(opt.value, opt.label);
@@ -398,6 +551,17 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
         dropdown.setValue(this.formState.provider);
         dropdown.onChange((value) => {
           this.formState.provider = value as ProviderName;
+        });
+      });
+
+    new Setting(form)
+      .setName("Provider name")
+      .setDesc("A friendly name for this provider account")
+      .addText((text) => {
+        text.setValue(this.formState.providerName);
+        text.setPlaceholder("e.g., Packy, OpenAI, Right Codes");
+        text.onChange((value) => {
+          this.formState.providerName = value.trim();
         });
       });
 
@@ -422,6 +586,21 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
         text.setPlaceholder("e.g., gpt-4.1, claude-sonnet-4.5");
         text.onChange((value) => {
           this.formState.model = value.trim();
+        });
+      });
+
+    new Setting(form)
+      .setName("Capabilities")
+      .setDesc("Comma-separated: chat, title, image")
+      .addText((text) => {
+        text.setValue(this.formState.capabilities.join(", "));
+        text.setPlaceholder("chat, title");
+        text.onChange((value) => {
+          const capabilities = value
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+          this.formState.capabilities = capabilities.length > 0 ? capabilities : ["chat", "title"];
         });
       });
 
@@ -488,11 +667,14 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
       const payload: ModelProviderSaveRequest = {
         id: this.formState.editingId,
         provider: this.formState.provider,
+        provider_id: this.formState.providerId,
+        provider_name: this.formState.providerName || null,
         model: this.formState.model.trim(),
         api_base: this.formState.apiBase.trim() || null,
         api_key: this.formState.apiKey || null,
         label: this.formState.label || null,
-        is_default: this.formState.isDefault
+        is_default: this.formState.isDefault,
+        capabilities: this.formState.capabilities
       };
 
       try {
@@ -537,12 +719,15 @@ export class DontAskMeAgainSettingTab extends PluginSettingTab {
 
       const payload: ModelProviderSaveRequest = {
         id: entry.id,
-        provider: entry.provider,
+        provider: entry.provider_kind || entry.provider,
+        provider_id: entry.provider_id || null,
+        provider_name: entry.provider_name || null,
         model: entry.model,
         api_base: entry.api_base ?? null,
         api_key: null,
         label: entry.label ?? null,
-        is_default: true
+        is_default: true,
+        capabilities: entry.capabilities || ["chat", "title"]
       };
       const response = await saveModelProvider(this.plugin.settings.serverBaseUrl, payload);
       if (!response.ok) {

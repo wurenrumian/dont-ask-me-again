@@ -163,14 +163,45 @@
   align-items: stretch;
 }
 
-.dama-floating-context {
+.dama-floating-context-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
+  min-width: 0;
+}
+
+.dama-context-file-pill,
+.dama-image-permission-toggle {
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.8;
+  line-height: 1.4;
+}
+
+.dama-context-file-pill {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.dama-image-permission-toggle {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.dama-image-permission-toggle.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .dama-floating-input {
@@ -309,6 +340,25 @@
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.model-provider-group {
+  padding: 12px;
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.model-provider-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.model-provider-group .model-provider-card {
+  margin-top: 8px;
 }
 
 .model-provider-empty {

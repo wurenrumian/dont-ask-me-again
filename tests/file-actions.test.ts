@@ -4,6 +4,7 @@ import {
   appendUserAndThinkingDraft,
   buildQuotedSelectionInstruction,
   buildQuotedSelectionPrefix,
+  buildResolvedImagePath,
   buildResolvedMarkdownPath,
   buildSourceReplacement,
   buildWrappedSourceLink,
@@ -84,6 +85,16 @@ describe("buildResolvedMarkdownPath", () => {
   });
 });
 
+describe("buildResolvedImagePath", () => {
+  it("sanitizes image filenames and appends the extension inferred from MIME type", () => {
+    expect(buildResolvedImagePath("bad/name?.jpg", "image/png")).toBe("bad-name-.png");
+  });
+
+  it("falls back to png for unknown image MIME types", () => {
+    expect(buildResolvedImagePath("cover", "application/octet-stream")).toBe("cover.png");
+  });
+});
+
 describe("buildSourceReplacement", () => {
   it("builds an aliased wikilink for selected text", () => {
     expect(buildSourceReplacement("answer-note", "Entropy")).toBe("[[answer-note|Entropy]]");
@@ -96,7 +107,9 @@ describe("buildSourceReplacement", () => {
 
 describe("buildQuotedSelectionPrefix", () => {
   it("formats the selected text as a simple quoted prefix", () => {
-    expect(buildQuotedSelectionPrefix("Alpha\nBeta")).toBe("引用内容：\nAlpha\nBeta\n\n");
+    expect(buildQuotedSelectionPrefix("Alpha\nBeta")).toBe(
+      "\n引用内容：\n```\nAlpha\nBeta\n```\n"
+    );
   });
 
   it("returns empty string when selection is blank", () => {
@@ -107,7 +120,7 @@ describe("buildQuotedSelectionPrefix", () => {
 describe("buildQuotedSelectionInstruction", () => {
   it("places quoted selection before the template instruction", () => {
     expect(buildQuotedSelectionInstruction("Alpha", "Summarize this")).toBe(
-      "引用内容：\nAlpha\n\nSummarize this"
+      "\n引用内容：\n```\nAlpha\n```\nSummarize this"
     );
   });
 

@@ -11,6 +11,7 @@
 /server/nanobot.config.json
 /.env
 /server/.env
+/server/provider_secrets.json
 *.pyc
 /.pytest_cache/
 /server/.pytest_cache/
