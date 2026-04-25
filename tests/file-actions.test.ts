@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendUserAndThinkingDraft,
   buildQuotedSelectionInstruction,
   buildQuotedSelectionPrefix,
   buildResolvedMarkdownPath,
@@ -9,8 +10,73 @@ import {
   extractLeadingH1Title,
   extractLeadingH1TitleFromCompletedLine,
   insertTextAtPosition,
-  pickPrimaryAnswer
+  pickPrimaryAnswer,
+  updateThinkingDraft
 } from "../src/file-actions";
+
+class FakeEditor {
+  value: string;
+  private cursor = { line: 0, ch: 0 };
+
+  constructor(value: string) {
+    this.value = value;
+  }
+
+  getValue() {
+    return this.value;
+  }
+
+  setValue(value: string) {
+    this.value = value;
+  }
+
+  lastLine() {
+    return this.value.split("\n").length - 1;
+  }
+
+  getLine(line: number) {
+    return this.value.split("\n")[line] ?? "";
+  }
+
+  setCursor(position: { line: number; ch: number }) {
+    this.cursor = position;
+  }
+
+  getCursor() {
+    return this.cursor;
+  }
+
+  replaceSelection(text: string) {
+    const offset = this.posToOffset(this.cursor);
+    this.value = `${this.value.slice(0, offset)}${text}${this.value.slice(offset)}`;
+    this.cursor = this.offsetToPos(offset + text.length);
+  }
+
+  posToOffset(position: { line: number; ch: number }) {
+    const lines = this.value.split("\n");
+    let offset = 0;
+    for (let i = 0; i < position.line; i += 1) {
+      offset += lines[i].length + 1;
+    }
+    return offset + position.ch;
+  }
+
+  offsetToPos(offset: number) {
+    const before = this.value.slice(0, offset);
+    const lines = before.split("\n");
+    return { line: lines.length - 1, ch: lines.at(-1)?.length ?? 0 };
+  }
+
+  replaceRange(
+    text: string,
+    from: { line: number; ch: number },
+    to: { line: number; ch: number }
+  ) {
+    const start = this.posToOffset(from);
+    const end = this.posToOffset(to);
+    this.value = `${this.value.slice(0, start)}${text}${this.value.slice(end)}`;
+  }
+}
 
 describe("buildResolvedMarkdownPath", () => {
   it("adds the markdown extension when needed", () => {
@@ -91,5 +157,19 @@ describe("pickPrimaryAnswer", () => {
 
   it("falls back to thinking when answer is empty", () => {
     expect(pickPrimaryAnswer("   ", "# Title\nBody")).toBe("# Title\nBody");
+  });
+});
+
+describe("anchored chat drafts", () => {
+  it("updates only the anchored draft when identical text appears earlier", () => {
+    const editor = new FakeEditor("Intro");
+    const first = appendUserAndThinkingDraft(editor as never, "note.md", "Explain");
+    const second = appendUserAndThinkingDraft(editor as never, "note.md", "Explain");
+
+    const updated = updateThinkingDraft(editor as never, second, "reasoning");
+
+    expect(updated.currentBlock).toContain("reasoning");
+    expect(editor.value.includes(first.currentBlock)).toBe(true);
+    expect(editor.value.endsWith(updated.currentBlock)).toBe(true);
   });
 });

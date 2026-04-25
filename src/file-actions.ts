@@ -27,7 +27,8 @@ function extractFilenameStem(filename: string): string {
 
   const normalized = stem.replace(/\\/g, "/");
   const basename = normalized.split("/").filter((part) => part.length > 0).at(-1) ?? normalized;
-  return sanitizeFileStem(basename) || "untitled";
+  const prefixedStem = basename.split("-").filter((part) => part.trim().length > 0).at(-1) ?? basename;
+  return sanitizeFileStem(prefixedStem) || "untitled";
 }
 
 export function extractLeadingH1Title(markdown: string): string | null {
@@ -62,7 +63,7 @@ export function buildWrappedSourceLink(filename: string): string {
 
 export function buildQuotedSelectionPrefix(selectionText: string): string {
   const quoted = selectionText.trim();
-  return quoted.length > 0 ? `引用内容：\n${quoted}\n\n` : "";
+  return quoted.length > 0 ? `\n引用内容：\n\`\`\`\n${quoted}\n\`\`\`\n` : "";
 }
 
 export function buildQuotedSelectionInstruction(
@@ -77,6 +78,14 @@ export function pickPrimaryAnswer(answer: string, thinking: string): string {
     return answer;
   }
   return thinking.trim().length > 0 ? thinking : answer;
+}
+
+export interface ChatDraftAnchor {
+  filePath: string;
+  startOffset: number;
+  endOffset: number;
+  instruction: string;
+  currentBlock: string;
 }
 
 function offsetAtPosition(content: string, position: EditorPosition): number | null {
@@ -299,18 +308,87 @@ export function appendChatTurn(
   editor.replaceSelection(`${prefix}${parts.join("\n")}\n`);
 }
 
+function editorPosToOffset(editor: Editor, position: EditorPosition): number {
+  const api = editor as Editor & { posToOffset?: (position: EditorPosition) => number };
+  if (api.posToOffset) {
+    return api.posToOffset(position);
+  }
+  const offset = offsetAtPosition(editor.getValue(), position);
+  return offset ?? editor.getValue().length;
+}
+
+function editorOffsetToPos(editor: Editor, offset: number): EditorPosition {
+  const api = editor as Editor & { offsetToPos?: (offset: number) => EditorPosition };
+  if (api.offsetToPos) {
+    return api.offsetToPos(offset);
+  }
+
+  const content = editor.getValue();
+  let line = 0;
+  let ch = 0;
+  for (let i = 0; i < Math.min(offset, content.length); i += 1) {
+    const current = content[i];
+    if (current === "\r") {
+      if (content[i + 1] === "\n") {
+        i += 1;
+      }
+      line += 1;
+      ch = 0;
+      continue;
+    }
+    if (current === "\n") {
+      line += 1;
+      ch = 0;
+      continue;
+    }
+    ch += 1;
+  }
+  return { line, ch };
+}
+
+function replaceAnchoredDraft(
+  editor: Editor,
+  anchor: ChatDraftAnchor,
+  nextBlock: string
+): ChatDraftAnchor {
+  const from = editorOffsetToPos(editor, anchor.startOffset);
+  const to = editorOffsetToPos(editor, anchor.endOffset);
+  editor.replaceRange(nextBlock, from, to);
+  anchor.endOffset = anchor.startOffset + nextBlock.length;
+  anchor.currentBlock = nextBlock;
+  return anchor;
+}
+
+export function appendUserAndThinkingDraft(editor: Editor, instruction: string): string;
 export function appendUserAndThinkingDraft(
   editor: Editor,
+  filePath: string,
   instruction: string
-): string {
+): ChatDraftAnchor;
+export function appendUserAndThinkingDraft(
+  editor: Editor,
+  filePathOrInstruction: string,
+  maybeInstruction?: string
+): string | ChatDraftAnchor {
   const { lastLineText } = moveCursorToEnd(editor);
 
+  const instruction = maybeInstruction ?? filePathOrInstruction;
   const prefix = lastLineText.length > 0 ? "\n\n" : "";
   const payload = buildDraftBlock(
     instruction,
     `<span style="opacity:0.55;">Streaming Reasoning...</span>\n\n`
   );
+  const startOffset = editorPosToOffset(editor, editor.getCursor()) + prefix.length;
   editor.replaceSelection(`${prefix}${payload}`);
+  if (maybeInstruction !== undefined) {
+    return {
+      filePath: filePathOrInstruction,
+      startOffset,
+      endOffset: startOffset + payload.length,
+      instruction,
+      currentBlock: payload
+    };
+  }
   return payload;
 }
 
@@ -319,13 +397,33 @@ export function updateThinkingDraft(
   currentBlock: string,
   instruction: string,
   thinking: string
-): string {
+): string;
+export function updateThinkingDraft(
+  editor: Editor,
+  anchor: ChatDraftAnchor,
+  thinking: string
+): ChatDraftAnchor;
+export function updateThinkingDraft(
+  editor: Editor,
+  currentBlockOrAnchor: string | ChatDraftAnchor,
+  instructionOrThinking: string,
+  maybeThinking?: string
+): string | ChatDraftAnchor {
+  const instruction = typeof currentBlockOrAnchor === "string"
+    ? instructionOrThinking
+    : currentBlockOrAnchor.instruction;
+  const thinking = typeof currentBlockOrAnchor === "string"
+    ? maybeThinking ?? ""
+    : instructionOrThinking;
   const escaped = escapeHtmlWithLineBreaks(thinking);
   const nextBlock = buildDraftBlock(
     instruction,
     `<span style="opacity:0.55;white-space:pre-wrap;">${escaped || "Streaming Reasoning..."}</span>`
   );
-  replaceFirstOccurrence(editor, currentBlock, nextBlock);
+  if (typeof currentBlockOrAnchor !== "string") {
+    return replaceAnchoredDraft(editor, currentBlockOrAnchor, nextBlock);
+  }
+  replaceFirstOccurrence(editor, currentBlockOrAnchor, nextBlock);
   return nextBlock;
 }
 
@@ -334,9 +432,29 @@ export function finalizeThinkingDraft(
   currentBlock: string,
   instruction: string,
   answer: string
-): void {
+): void;
+export function finalizeThinkingDraft(
+  editor: Editor,
+  anchor: ChatDraftAnchor,
+  answer: string
+): ChatDraftAnchor;
+export function finalizeThinkingDraft(
+  editor: Editor,
+  currentBlockOrAnchor: string | ChatDraftAnchor,
+  instructionOrAnswer: string,
+  maybeAnswer?: string
+): void | ChatDraftAnchor {
+  const instruction = typeof currentBlockOrAnchor === "string"
+    ? instructionOrAnswer
+    : currentBlockOrAnchor.instruction;
+  const answer = typeof currentBlockOrAnchor === "string"
+    ? maybeAnswer ?? ""
+    : instructionOrAnswer;
   const nextBlock = buildDraftBlock(instruction, answer || "(empty)");
-  replaceFirstOccurrence(editor, currentBlock, nextBlock);
+  if (typeof currentBlockOrAnchor !== "string") {
+    return replaceAnchoredDraft(editor, currentBlockOrAnchor, nextBlock);
+  }
+  replaceFirstOccurrence(editor, currentBlockOrAnchor, nextBlock);
 }
 
 export function updateAnswerDraft(
@@ -344,8 +462,28 @@ export function updateAnswerDraft(
   currentBlock: string,
   instruction: string,
   answer: string
-): string {
+): string;
+export function updateAnswerDraft(
+  editor: Editor,
+  anchor: ChatDraftAnchor,
+  answer: string
+): ChatDraftAnchor;
+export function updateAnswerDraft(
+  editor: Editor,
+  currentBlockOrAnchor: string | ChatDraftAnchor,
+  instructionOrAnswer: string,
+  maybeAnswer?: string
+): string | ChatDraftAnchor {
+  const instruction = typeof currentBlockOrAnchor === "string"
+    ? instructionOrAnswer
+    : currentBlockOrAnchor.instruction;
+  const answer = typeof currentBlockOrAnchor === "string"
+    ? maybeAnswer ?? ""
+    : instructionOrAnswer;
   const nextBlock = buildDraftBlock(instruction, answer || "...");
-  replaceFirstOccurrence(editor, currentBlock, nextBlock);
+  if (typeof currentBlockOrAnchor !== "string") {
+    return replaceAnchoredDraft(editor, currentBlockOrAnchor, nextBlock);
+  }
+  replaceFirstOccurrence(editor, currentBlockOrAnchor, nextBlock);
   return nextBlock;
 }

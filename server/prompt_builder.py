@@ -22,13 +22,6 @@ def build_runtime_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         else ""
     )
 
-    history_block = ""
-    if session.history:
-        rendered_history = "\n".join(
-            f"{item['role']}: {item['content']}" for item in session.history[-6:]
-        )
-        history_block = f"Session history:\n{rendered_history}\n\n"
-
     return (
         "You are generating an Obsidian note from the current file context.\n"
         "Return only a JSON object with keys filename and markdown.\n\n"
@@ -36,7 +29,6 @@ def build_runtime_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         f"Source file path:\n{payload.input.active_file_path}\n\n"
         f"Source file content:\n{payload.input.active_file_content}\n\n"
         f"{selection_block}"
-        f"{history_block}"
         f"Instruction:\n{payload.input.instruction}\n"
     )
 
@@ -47,13 +39,6 @@ def build_chat_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         if payload.input.selection_text.strip()
         else ""
     )
-
-    history_block = ""
-    if session.history:
-        rendered_history = "\n".join(
-            f"{item['role']}: {item['content']}" for item in session.history[-8:]
-        )
-        history_block = f"Session history:\n{rendered_history}\n\n"
 
     return (
         "You are an assistant chatting inside Obsidian for one active note.\n"
@@ -67,23 +52,14 @@ def build_chat_prompt(payload: InvokeRequest, session: SessionRecord) -> str:
         f"@active_file path:\n{payload.input.active_file_path}\n\n"
         f"@active_file content:\n{payload.input.active_file_content}\n\n"
         f"{selection_block}"
-        f"{history_block}"
         f"User instruction:\n{payload.input.instruction}\n"
     )
 
 
 def build_responses_prompt(instruction: str, session: SessionRecord) -> str:
-    history_block = ""
-    if session.history:
-        rendered_history = "\n".join(
-            f"{item['role']}: {item['content']}" for item in session.history[-8:]
-        )
-        history_block = f"Session history:\n{rendered_history}\n\n"
-
     return (
         "You are a coding assistant responding to a Responses API client.\n"
         "Return plain helpful text. If you need internal reasoning, keep it brief.\n"
         f"{_obsidian_markdown_rules()}\n"
-        f"{history_block}"
         f"User input:\n{instruction.strip()}\n"
     )

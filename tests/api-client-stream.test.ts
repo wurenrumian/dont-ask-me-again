@@ -113,6 +113,45 @@ describe("invokeToolStream", () => {
       { type: "done", answer: "## Title\nBody" }
     ]);
   });
+
+  it("parses multi-line data blocks with the shared SSE reader", async () => {
+    const chunks = [
+      "event: answer_delta\r\n",
+      "data: {\"text\":\"hel\"}\r\n",
+      "data: {\"text\":\"lo\"}\r\n\r\n",
+      "event: done\r\n",
+      "data: {\"ok\":true}\r\n\r\n"
+    ];
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      }
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: stream
+      })
+    );
+
+    const events: StreamEvent[] = [];
+    await invokeToolStream("http://127.0.0.1:8787", { hello: "world" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([
+      { type: "answer_delta", text: "hello" },
+      { type: "done" }
+    ]);
+  });
 });
 
 describe("invokeResponsesStream", () => {

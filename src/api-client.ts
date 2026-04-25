@@ -215,6 +215,102 @@ function reconcileFinalAnswerDelta(
   return { deltaToEmit: finalAnswer, nextAccumulated: finalAnswer };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeSSEDataLines(lines: string[]): unknown {
+  if (lines.length === 0) {
+    return {};
+  }
+
+  const parsed = lines.map((line) => JSON.parse(line));
+  if (parsed.length === 1) {
+    return parsed[0];
+  }
+
+  if (parsed.every((item) => isRecord(item) && typeof item.text === "string")) {
+    return {
+      ...(parsed[0] as Record<string, unknown>),
+      text: parsed.map((item) => String((item as { text: string }).text)).join("")
+    };
+  }
+
+  if (parsed.every((item) => isRecord(item) && typeof item.delta === "string")) {
+    return {
+      ...(parsed[0] as Record<string, unknown>),
+      delta: parsed.map((item) => String((item as { delta: string }).delta)).join("")
+    };
+  }
+
+  return parsed.at(-1) ?? {};
+}
+
+function getResponsesOutputText(responsePayload: Record<string, unknown>): string {
+  if (typeof responsePayload.output_text === "string") {
+    return responsePayload.output_text;
+  }
+  const output = Array.isArray(responsePayload.output) ? responsePayload.output : [];
+  const firstOutput = output.find(isRecord);
+  const content = firstOutput && Array.isArray(firstOutput.content) ? firstOutput.content : [];
+  const firstContent = content.find(isRecord);
+  return typeof firstContent?.text === "string" ? firstContent.text : "";
+}
+
+async function parseSSEStream(
+  response: Response,
+  failureMessage: string,
+  onMessage: (eventName: string, data: unknown) => boolean | void
+): Promise<void> {
+  if (!response.ok || !response.body) {
+    throw new Error(`${failureMessage}: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const takeNextBlock = (): string | null => {
+    const match = buffer.match(/\r?\n\r?\n/);
+    if (!match || match.index === undefined) {
+      return null;
+    }
+    const block = buffer.slice(0, match.index);
+    buffer = buffer.slice(match.index + match[0].length);
+    return block;
+  };
+
+  const emitBlock = (block: string): boolean => {
+    const lines = block.split(/\r?\n/);
+    const eventLine = lines.find((line) => line.startsWith("event:"));
+    if (!eventLine) {
+      return false;
+    }
+    const data = mergeSSEDataLines(
+      lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+    );
+    return onMessage(eventLine.slice(6).trim(), data) === true;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      return;
+    }
+    buffer += decoder.decode(value, { stream: true });
+
+    let block = takeNextBlock();
+    while (block !== null) {
+      if (emitBlock(block)) {
+        return;
+      }
+      block = takeNextBlock();
+    }
+  }
+}
+
 async function requestJson(
   url: string,
   method: "GET" | "POST" | "DELETE",
@@ -295,28 +391,9 @@ export async function invokeToolStream(
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`Stream request failed: ${response.status}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let shouldStop = false;
   let answerAccumulated = "";
-
-  const takeNextBlock = (): string | null => {
-    const match = buffer.match(/\r?\n\r?\n/);
-    if (!match || match.index === undefined) {
-      return null;
-    }
-    const block = buffer.slice(0, match.index);
-    buffer = buffer.slice(match.index + match[0].length);
-    return block;
-  };
-
-  const emitEvent = (eventName: string, dataLine: string): void => {
-    const data = dataLine ? JSON.parse(dataLine) : {};
+  await parseSSEStream(response, "Stream request failed", (eventName, payload) => {
+    const data = isRecord(payload) ? payload : {};
     if (eventName === "session") {
       onEvent({ type: "session", sessionId: String(data.session_id ?? "") });
     } else if (eventName === "thinking_delta") {
@@ -337,7 +414,7 @@ export async function invokeToolStream(
       } else {
         onEvent({ type: "done" });
       }
-      shouldStop = true;
+      return true;
     } else if (eventName === "error") {
       onEvent({
         type: "error",
@@ -347,33 +424,10 @@ export async function invokeToolStream(
           retryable: Boolean(data.retryable)
         }
       });
-      shouldStop = true;
+      return true;
     }
-  };
-
-  while (true) {
-    if (shouldStop) return;
-    const { done, value } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-
-    let block = takeNextBlock();
-    while (block !== null) {
-      const lines = block.split(/\r?\n/);
-      const eventLine = lines.find((line) => line.startsWith("event:"));
-      const dataLine = lines
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("");
-      if (eventLine) {
-        emitEvent(eventLine.slice(6).trim(), dataLine);
-        if (shouldStop) {
-          return;
-        }
-      }
-      block = takeNextBlock();
-    }
-  }
+    return false;
+  });
 }
 
 export async function invokeResponsesStream(
@@ -390,40 +444,23 @@ export async function invokeResponsesStream(
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`Responses stream request failed: ${response.status}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let shouldStop = false;
   let answerAccumulated = "";
-
-  const takeNextBlock = (): string | null => {
-    const match = buffer.match(/\r?\n\r?\n/);
-    if (!match || match.index === undefined) {
-      return null;
-    }
-    const block = buffer.slice(0, match.index);
-    buffer = buffer.slice(match.index + match[0].length);
-    return block;
-  };
-
-  const emitEvent = (eventName: string, dataLine: string): void => {
-    const data = dataLine ? JSON.parse(dataLine) : {};
+  await parseSSEStream(response, "Responses stream request failed", (eventName, payload) => {
+    const data = isRecord(payload) ? payload : {};
     if (eventName === "response.created") {
-      const sessionId = String(data.response?.metadata?.session_id ?? "");
+      const responsePayload = isRecord(data.response) ? data.response : {};
+      const metadata = isRecord(responsePayload.metadata) ? responsePayload.metadata : {};
+      const sessionId = String(metadata.session_id ?? "");
       if (sessionId) {
         onEvent({ type: "session", sessionId });
       }
-      return;
+      return false;
     }
     if (eventName === "response.output_text.delta") {
       const deltaText = String(data.delta ?? "");
       answerAccumulated += deltaText;
       onEvent({ type: "answer_delta", text: deltaText });
-      return;
+      return false;
     }
     if (eventName === "response.output_text.done") {
       const finalAnswer = String(data.text ?? "");
@@ -432,62 +469,37 @@ export async function invokeResponsesStream(
         onEvent({ type: "answer_delta", text: reconciled.deltaToEmit });
       }
       answerAccumulated = reconciled.nextAccumulated;
-      return;
+      return false;
     }
     if (eventName === "response.completed") {
-      const sessionId = String(data.response?.metadata?.session_id ?? "");
+      const responsePayload = isRecord(data.response) ? data.response : {};
+      const metadata = isRecord(responsePayload.metadata) ? responsePayload.metadata : {};
+      const sessionId = String(metadata.session_id ?? "");
       if (sessionId) {
         onEvent({ type: "session", sessionId });
       }
-      const completedAnswer = String(
-        data.response?.output_text
-          ?? data.response?.output?.[0]?.content?.[0]?.text
-          ?? ""
-      );
+      const completedAnswer = getResponsesOutputText(responsePayload);
       if (completedAnswer) {
         onEvent({ type: "done", answer: completedAnswer });
       } else {
         onEvent({ type: "done" });
       }
-      shouldStop = true;
-      return;
+      return true;
     }
     if (eventName === "response.error") {
+      const error = isRecord(data.error) ? data.error : {};
       onEvent({
         type: "error",
         error: {
-          code: String(data.error?.code ?? "INTERNAL"),
-          message: String(data.error?.message ?? "Unknown responses stream error"),
+          code: String(error.code ?? "INTERNAL"),
+          message: String(error.message ?? "Unknown responses stream error"),
           retryable: false
         }
       });
-      shouldStop = true;
+      return true;
     }
-  };
-
-  while (true) {
-    if (shouldStop) return;
-    const { done, value } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-
-    let block = takeNextBlock();
-    while (block !== null) {
-      const lines = block.split(/\r?\n/);
-      const eventLine = lines.find((line) => line.startsWith("event:"));
-      const dataLine = lines
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("");
-      if (eventLine) {
-        emitEvent(eventLine.slice(6).trim(), dataLine);
-        if (shouldStop) {
-          return;
-        }
-      }
-      block = takeNextBlock();
-    }
-  }
+    return false;
+  });
 }
 
 export async function saveProviderConfig(

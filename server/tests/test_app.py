@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from server import app as app_module
+from server.routes import chat as chat_routes
 from server.schemas import ProviderConfigResult
 
 
@@ -219,11 +220,11 @@ def test_new_session_first_request_starts_title_generation_once(monkeypatch) -> 
     async def fake_run_turn(prompt: str, session_id: str) -> str:
         return "ok"
 
-    def fake_schedule(session, first_user_text: str, title_model_id: str | None) -> None:
+    def fake_schedule(ctx, session, first_user_text: str, title_model_id: str | None) -> None:
         scheduled.append((session.session_id, first_user_text, title_model_id))
 
     monkeypatch.setattr(app_module.runtime, "run_turn", fake_run_turn)
-    monkeypatch.setattr(app_module, "_schedule_session_title_generation", fake_schedule)
+    monkeypatch.setattr(chat_routes, "schedule_session_title_generation", fake_schedule)
 
     response = client.post(
         "/api/v1/invoke",
@@ -254,11 +255,11 @@ def test_existing_session_does_not_retry_title_generation(monkeypatch) -> None:
     async def fake_run_turn(prompt: str, session_id: str) -> str:
         return "ok"
 
-    def fake_schedule(session_record, first_user_text: str, title_model_id: str | None) -> None:
+    def fake_schedule(ctx, session_record, first_user_text: str, title_model_id: str | None) -> None:
         seen_calls.append(session_record.session_id)
 
     monkeypatch.setattr(app_module.runtime, "run_turn", fake_run_turn)
-    monkeypatch.setattr(app_module, "_schedule_session_title_generation", fake_schedule)
+    monkeypatch.setattr(chat_routes, "schedule_session_title_generation", fake_schedule)
 
     first = client.post(
         "/api/v1/invoke",
