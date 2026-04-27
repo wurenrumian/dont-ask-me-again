@@ -5,23 +5,22 @@ export interface StreamRendererOptions {
 }
 
 interface StreamRenderState {
-  startedAt: number;
   thinkingText: string;
   answerText: string;
   thinkingQueue: string;
   answerQueue: string;
-  fallbackThinkingText: string;
-  fallbackThinkingCursor: number;
-  lastFallbackTickAt: number;
   hasRealThinking: boolean;
   answerStarted: boolean;
   done: boolean;
   rafId: number | null;
+  timeoutId: number | null;
+  lastRenderedAt: number | null;
   resolveDrain: (() => void) | null;
   drained: Promise<void>;
 }
 
 export class StreamRenderer {
+  private static readonly minRenderIntervalMs = 80;
   private readonly state: StreamRenderState;
 
   constructor(private readonly options: StreamRendererOptions) {
@@ -30,14 +29,6 @@ export class StreamRenderer {
 
   pushThinking(delta: string): void {
     this.state.hasRealThinking = true;
-    if (
-      this.state.fallbackThinkingCursor > 0
-      && this.state.thinkingText
-        === this.state.fallbackThinkingText.slice(0, this.state.fallbackThinkingCursor)
-    ) {
-      this.state.thinkingText = "";
-      this.state.fallbackThinkingCursor = 0;
-    }
     this.state.thinkingQueue += delta;
     this.ensurePump();
   }
@@ -70,18 +61,16 @@ export class StreamRenderer {
 
   private createState(): StreamRenderState {
     const state = {
-      startedAt: performance.now(),
       thinkingText: "",
       answerText: "",
       thinkingQueue: "",
       answerQueue: "",
-      fallbackThinkingText: "Streaming Reasoning / Streaming Thoughts...",
-      fallbackThinkingCursor: 0,
-      lastFallbackTickAt: 0,
       hasRealThinking: false,
       answerStarted: false,
       done: false,
       rafId: null,
+      timeoutId: null,
+      lastRenderedAt: null,
       resolveDrain: null,
       drained: Promise.resolve()
     } as StreamRenderState;
@@ -92,70 +81,39 @@ export class StreamRenderer {
   }
 
   private ensurePump(): void {
-    if (this.state.rafId !== null) {
+    if (this.state.rafId !== null || this.state.timeoutId !== null) {
       return;
     }
 
     const step = () => {
       this.state.rafId = null;
       let changed = false;
-      const minThinkingVisibleMs = 420;
-      const allowSwitchToAnswer = this.state.hasRealThinking
-        || (performance.now() - this.state.startedAt) >= minThinkingVisibleMs
-        || this.state.fallbackThinkingCursor >= this.state.fallbackThinkingText.length;
 
       if (!this.state.answerStarted && this.state.thinkingQueue.length > 0) {
-        const charsPerFrame = this.computeCharsPerFrame(this.state.thinkingQueue.length);
-        const chunk = this.state.thinkingQueue.slice(0, charsPerFrame);
-        this.state.thinkingQueue = this.state.thinkingQueue.slice(charsPerFrame);
+        const chunk = this.state.thinkingQueue;
+        this.state.thinkingQueue = "";
         this.state.thinkingText += chunk;
         this.options.updateThinking(this.state.thinkingText);
         changed = true;
       }
 
-      if (
-        !this.state.answerStarted
-        && !this.state.done
-        && this.state.thinkingQueue.length === 0
-      ) {
-        const now = performance.now();
-        if (
-          this.state.fallbackThinkingCursor < this.state.fallbackThinkingText.length
-          && now - this.state.lastFallbackTickAt >= 30
-        ) {
-          this.state.fallbackThinkingCursor += 1;
-          this.state.lastFallbackTickAt = now;
-          this.state.thinkingText = this.state.fallbackThinkingText.slice(
-            0,
-            this.state.fallbackThinkingCursor
-          );
-          this.options.updateThinking(this.state.thinkingText);
-          changed = true;
-        }
-      }
-
-      if (this.state.answerQueue.length > 0 && allowSwitchToAnswer) {
+      if (this.state.answerQueue.length > 0) {
         this.state.answerStarted = true;
-        const charsPerFrame = this.computeCharsPerFrame(this.state.answerQueue.length);
-        const chunk = this.state.answerQueue.slice(0, charsPerFrame);
-        this.state.answerQueue = this.state.answerQueue.slice(charsPerFrame);
+        const chunk = this.state.answerQueue;
+        this.state.answerQueue = "";
         this.state.answerText += chunk;
         this.options.updateAnswer(this.state.answerText);
         changed = true;
       }
 
       if (changed) {
+        this.state.lastRenderedAt = performance.now();
         this.options.onChanged();
       }
 
       if (
         this.state.thinkingQueue.length > 0
         || this.state.answerQueue.length > 0
-        || (
-          !this.state.done
-          && !this.state.answerStarted
-          && this.state.fallbackThinkingCursor < this.state.fallbackThinkingText.length
-        )
       ) {
         this.state.rafId = window.requestAnimationFrame(step);
         return;
@@ -168,11 +126,20 @@ export class StreamRenderer {
       }
     };
 
-    this.state.rafId = window.requestAnimationFrame(step);
-  }
+    const now = performance.now();
+    const elapsed = this.state.lastRenderedAt === null
+      ? StreamRenderer.minRenderIntervalMs
+      : now - this.state.lastRenderedAt;
+    const delayMs = Math.max(0, StreamRenderer.minRenderIntervalMs - elapsed);
 
-  private computeCharsPerFrame(queueLen: number): number {
-    const adaptive = Math.ceil(queueLen / 28);
-    return Math.max(1, Math.min(12, adaptive));
+    if (delayMs > 0) {
+      this.state.timeoutId = window.setTimeout(() => {
+        this.state.timeoutId = null;
+        this.state.rafId = window.requestAnimationFrame(step);
+      }, delayMs);
+      return;
+    }
+
+    this.state.rafId = window.requestAnimationFrame(step);
   }
 }
