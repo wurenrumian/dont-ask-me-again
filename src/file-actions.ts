@@ -150,8 +150,8 @@ function buildDraftBlock(
   assistantContent: string
 ): string {
   return [
-    `\n---\n`,
-    `**我**: ${instruction.trim()}`,
+    `\n---\n\n`,
+    `# 我: ${instruction.trim()}`,
     "",
     `**Assistant**:\n\n${assistantContent}`
   ].join("\n");
