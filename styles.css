@@ -181,21 +181,36 @@
 .dama-image-permission-toggle {
   pointer-events: auto;
   min-height: 28px;
-  padding: 4px 28px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
-  background-color: var(--background-primary-alt) !important;
+  background-color: var(--background-primary) !important;
   color: var(--text-normal);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   opacity: 1 !important;
+}
+
+.dama-context-file-pill {
+  flex: 0 1 auto;
+  max-width: 200px;
+  padding: 4px 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  text-align: center;
+}
+
+.dama-image-permission-toggle {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .dama-context-file-pill:hover,
@@ -203,28 +218,17 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover) !important;
 }
 
 .dama-context-file-pill:empty {
   display: none;
 }
 
-.dama-context-file-pill {
-  flex: 0 1 auto;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dama-image-permission-toggle {
-  flex: 0 0 auto;
-  cursor: pointer;
-}
-
 .dama-image-permission-toggle.is-active {
-  border-color: var(--interactive-accent);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  border-color: var(--interactive-accent) !important;
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
 }
 
 .dama-floating-input {
