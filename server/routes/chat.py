@@ -35,8 +35,8 @@ def split_output(raw_output: str) -> tuple[str, str]:
     thinking_match = _THINKING_RE.search(raw_output)
     answer_match = _ANSWER_RE.search(raw_output)
 
-    thinking = thinking_match.group(1).strip() if thinking_match else ""
-    answer = answer_match.group(1).strip() if answer_match else raw_output.strip()
+    thinking = thinking_match.group(1) if thinking_match else ""
+    answer = answer_match.group(1) if answer_match else raw_output
     return thinking, answer
 
 
@@ -368,7 +368,7 @@ def create_router(ctx: ServerContext) -> APIRouter:
                         )
 
                     thinking, answer = split_output(raw_output)
-                    final_answer = answer.strip() or answer_buffer.strip()
+                    final_answer = answer if answer else answer_buffer
                     ctx.session_store.append_turn(
                         session.session_id,
                         "assistant",

@@ -128,6 +128,15 @@ def test_chat_stream_emits_reasoning_and_answer_events(monkeypatch) -> None:
     assert "event: done" in body
 
 
+def test_split_output_preserves_markdown_spacing_inside_answer_tags() -> None:
+    thinking, answer = chat_routes.split_output(
+        "<thinking>\nplan\n</thinking><answer>\n\n# Title\n\n- item\n</answer>"
+    )
+
+    assert thinking == "\nplan\n"
+    assert answer == "\n\n# Title\n\n- item\n"
+
+
 def test_chat_stream_forwards_generated_image_events(monkeypatch) -> None:
     async def fake_run_turn_stream(
         prompt: str,
@@ -423,6 +432,31 @@ def test_openai_responses_stream_emits_delta_and_completed(monkeypatch) -> None:
     assert "event: response.output_text.delta" in body
     assert "hello world" in body
     assert "event: response.completed" in body
+
+
+def test_openai_responses_stream_preserves_leading_blank_lines_in_completed_answer(
+    monkeypatch,
+) -> None:
+    async def fake_run_turn_stream(prompt: str, session_id: str, on_delta) -> str:
+        await on_delta("<answer>\n\n# Title\nBody</answer>")
+        return "<thinking></thinking><answer>\n\n# Title\nBody</answer>"
+
+    monkeypatch.setattr(app_module.runtime, "run_turn_stream", fake_run_turn_stream)
+
+    with client.stream(
+        "POST",
+        "/v1/responses",
+        json={
+            "model": "gpt-5-codex",
+            "input": "stream please",
+            "stream": True,
+        },
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert '"text": "\\n\\n# Title\\nBody"' in body
+    assert '"output_text": "\\n\\n# Title\\nBody"' in body
 
 
 def test_openai_responses_stream_forwards_generated_image_events(monkeypatch) -> None:

@@ -26,13 +26,13 @@ def normalize_runtime_result(raw_output: str, session_id: str) -> InvokeResult:
     if thinking_match or answer_match:
         return InvokeResult(
             session_id=session_id,
-            thinking=(thinking_match.group(1).strip() if thinking_match else ""),
-            answer=(answer_match.group(1).strip() if answer_match else raw_output.strip()),
+            thinking=(thinking_match.group(1) if thinking_match else ""),
+            answer=(answer_match.group(1) if answer_match else raw_output),
         )
 
     data = json.loads(_extract_json_object(raw_output))
     return InvokeResult(
         session_id=session_id,
-        thinking=str(data.get("thinking", "")).strip(),
-        answer=str(data["answer"]).strip(),
+        thinking=str(data.get("thinking", "")),
+        answer=str(data["answer"]),
     )
