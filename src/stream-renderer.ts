@@ -34,13 +34,6 @@ export class StreamRenderer {
   }
 
   pushAnswer(delta: string): void {
-    if (
-      !this.state.answerStarted
-      && !this.state.hasRealThinking
-      && delta.trim().length === 0
-    ) {
-      return;
-    }
     this.state.answerQueue += delta;
     this.ensurePump();
   }

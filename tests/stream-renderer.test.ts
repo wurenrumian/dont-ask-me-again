@@ -81,6 +81,24 @@ describe("StreamRenderer", () => {
     expect(raf.pendingCount()).toBe(0);
   });
 
+  it("preserves leading whitespace-only answer deltas before the first rendered answer chunk", () => {
+    vi.useFakeTimers();
+    const raf = installAnimationFrameMock();
+    const updateAnswer = vi.fn();
+    const renderer = new StreamRenderer({
+      updateThinking: vi.fn(),
+      updateAnswer,
+      onChanged: vi.fn()
+    });
+
+    renderer.pushAnswer("\n\n  ");
+    renderer.pushAnswer("# Title");
+    raf.flushNext();
+
+    expect(updateAnswer).toHaveBeenCalledTimes(1);
+    expect(updateAnswer).toHaveBeenLastCalledWith("\n\n  # Title");
+  });
+
   it("throttles follow-up answer updates so editor replacements are not frame-bound", () => {
     vi.useFakeTimers();
     const raf = installAnimationFrameMock();
