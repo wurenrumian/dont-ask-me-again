@@ -9,7 +9,7 @@ import {
 describe("buildSelectionActionItems", () => {
   it("prepends a custom prompt action before templates", () => {
     expect(buildSelectionActionItems(["Explain", "Summarize"])).toEqual([
-      { kind: "custom", label: "自定义 prompt" },
+      { kind: "custom", label: "自定义 prompt", targetMode: "new-note" },
       { kind: "template", label: "Explain", template: "Explain" },
       { kind: "template", label: "Summarize", template: "Summarize" }
     ]);
@@ -32,11 +32,28 @@ describe("SelectionPromptBinding", () => {
 
     binding.set({
       filePath: "note.md",
-      selectionText: "selected text"
+      selectionText: "selected text",
+      targetMode: "new-note"
     });
 
     expect(binding.consume()?.selectionText).toBe("selected text");
     expect(binding.consume()).toBeNull();
+  });
+
+  it("preserves the target mode for the next selection-based submission", () => {
+    const binding = new SelectionPromptBinding();
+
+    binding.set({
+      filePath: "note.md",
+      selectionText: "selected text",
+      targetMode: "new-note"
+    });
+
+    expect(binding.consume()).toEqual({
+      filePath: "note.md",
+      selectionText: "selected text",
+      targetMode: "new-note"
+    });
   });
 
   it("clears the pending selection explicitly", () => {
@@ -44,7 +61,8 @@ describe("SelectionPromptBinding", () => {
 
     binding.set({
       filePath: "note.md",
-      selectionText: "selected text"
+      selectionText: "selected text",
+      targetMode: "new-note"
     });
     binding.clear();
 

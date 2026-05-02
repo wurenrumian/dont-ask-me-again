@@ -75,6 +75,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
   private activeContext: ActiveEditorContext | null = null;
   private selectionDebounceHandle: number | null = null;
   private selectionPromptBinding = new SelectionPromptBinding();
+  private pendingSelectionSourceContext: ActiveEditorContext | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -277,7 +278,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
         void this.saveSettings();
       },
       onSubmit: async ({ instruction, allowImageGeneration, verbosityLevel }) => {
-        await this.handleSubmit(instruction, { allowImageGeneration, verbosityLevel });
+        await this.handleFloatingBoxSubmit(instruction, { allowImageGeneration, verbosityLevel });
       },
       onTemplateFromSelection: async (template) => this.handleTemplateFromSelection(template),
       onCustomPromptFromSelection: () => this.handleCustomPromptFromSelection()
@@ -383,9 +384,9 @@ export default class DontAskMeAgainPlugin extends Plugin {
     this.showFloatingBox(true);
   }
 
-  private buildSelectionTemplateInstruction(template: string): string {
+  private buildSelectionNewNoteInstruction(instruction: string): string {
     return [
-      template.trim(),
+      instruction.trim(),
       "",
       "请基于我在源笔记里选中的文本生成一个新笔记。",
       "回答必须从第一行开始就是一级标题（格式：# 标题）。",
@@ -394,6 +395,34 @@ export default class DontAskMeAgainPlugin extends Plugin {
       "不要包含路径、扩展名、Markdown 标记、引号或以下字符：\\ / : * ? \" < > |。",
       "标题后继续输出完整的 Markdown 正文内容。"
     ].join("\n");
+  }
+
+  private async handleFloatingBoxSubmit(
+    instruction: string,
+    options: {
+      allowImageGeneration: boolean;
+      verbosityLevel: number;
+    }
+  ): Promise<void> {
+    const pendingSelection = this.selectionPromptBinding.consume();
+    if (pendingSelection?.targetMode === "new-note") {
+      const source = this.pendingSelectionSourceContext;
+      this.pendingSelectionSourceContext = null;
+      if (!source || source.file.path !== pendingSelection.filePath) {
+        new Notice("Source selection context is no longer available.");
+        return;
+      }
+
+      await this.handleSelectionPromptAsNewNote(
+        source,
+        this.buildSelectionNewNoteInstruction(instruction),
+        options
+      );
+      return;
+    }
+
+    this.pendingSelectionSourceContext = null;
+    await this.handleSubmit(instruction, options);
   }
 
   private async createAndSwitchToUntitledNote(directory: string): Promise<ActiveEditorContext | null> {
@@ -460,88 +489,15 @@ export default class DontAskMeAgainPlugin extends Plugin {
       return;
     }
 
-    this.syncFloatingBoxFromContext(source, false);
-    const sourceFolder = this.getParentFolder(source.file.path);
-
     try {
-      const target = await this.createAndSwitchToUntitledNote(sourceFolder);
-      if (!target) {
-        new Notice("Failed to open untitled note.");
-        return;
-      }
-
-      const selectionContext: SelectionActionContext = { source, target };
-      const instruction = this.buildSelectionTemplateInstruction(template);
-      let resolvedStem: string | null = null;
-      let linkInserted = false;
-      let linkInsertPromise: Promise<void> | null = null;
-      const ensureLinkInsertedOnce = async (stem: string): Promise<void> => {
-        if (linkInserted) {
-          return;
+      await this.handleSelectionPromptAsNewNote(
+        source,
+        this.buildSelectionNewNoteInstruction(template),
+        {
+          allowImageGeneration: false,
+          verbosityLevel: this.settings.verbosityLevel
         }
-        if (linkInsertPromise) {
-          await linkInsertPromise;
-          return;
-        }
-
-        // Set insertion promise before awaiting to avoid duplicate inserts from concurrent callbacks.
-        linkInsertPromise = (async () => {
-          await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, stem);
-          linkInserted = true;
-        })();
-
-        try {
-          await linkInsertPromise;
-        } finally {
-          linkInsertPromise = null;
-        }
-      };
-      const answer = await this.handleSubmit(instruction, {
-        context: selectionContext.target,
-        selectionTextOverride: selectionContext.source.selection.text,
-        onAnswerProgress: async (partialAnswer) => {
-          if (resolvedStem && linkInserted) {
-            return;
-          }
-          const earlyTitle = extractLeadingH1TitleFromCompletedLine(partialAnswer);
-          if (!earlyTitle) {
-            return;
-          }
-          if (!resolvedStem) {
-            resolvedStem = await this.renameNoteByTitle(
-              selectionContext.target,
-              earlyTitle,
-              sourceFolder
-            );
-          }
-          await ensureLinkInsertedOnce(resolvedStem);
-        }
-      });
-      if (answer === null) {
-        return;
-      }
-
-      const finalMarkdown = answer.endsWith("\n") ? answer : `${answer}\n`;
-      selectionContext.target.editor.setValue(finalMarkdown);
-      selectionContext.target.editor.setCursor({ line: 0, ch: 0 });
-
-      const renamedStem = resolvedStem ?? await this.renameNoteFromAnswer(
-        selectionContext.target,
-        answer,
-        sourceFolder
       );
-      if (!renamedStem) {
-        new Notice("No leading # title found, keeping untitled note name.");
-        return;
-      }
-
-      if (linkInsertPromise) {
-        await linkInsertPromise;
-      }
-      if (!linkInserted) {
-        await ensureLinkInsertedOnce(renamedStem);
-      }
-      new Notice(`Linked source to (${renamedStem}).`);
     } finally {
       this.showFloatingBox(true);
     }
@@ -557,10 +513,102 @@ export default class DontAskMeAgainPlugin extends Plugin {
 
     this.selectionPromptBinding.set({
       filePath: source.file.path,
-      selectionText: source.selection.text
+      selectionText: source.selection.text,
+      targetMode: "new-note"
     });
+    this.pendingSelectionSourceContext = source;
     this.syncFloatingBoxFromContext(source, false);
     this.showFloatingBox(true);
+  }
+
+  private async handleSelectionPromptAsNewNote(
+    source: ActiveEditorContext,
+    instruction: string,
+    options: {
+      allowImageGeneration: boolean;
+      verbosityLevel: number;
+    }
+  ): Promise<void> {
+    this.syncFloatingBoxFromContext(source, false);
+    const sourceFolder = this.getParentFolder(source.file.path);
+    const target = await this.createAndSwitchToUntitledNote(sourceFolder);
+    if (!target) {
+      new Notice("Failed to open untitled note.");
+      return;
+    }
+
+    const selectionContext: SelectionActionContext = { source, target };
+    let resolvedStem: string | null = null;
+    let linkInserted = false;
+    let linkInsertPromise: Promise<void> | null = null;
+    const ensureLinkInsertedOnce = async (stem: string): Promise<void> => {
+      if (linkInserted) {
+        return;
+      }
+      if (linkInsertPromise) {
+        await linkInsertPromise;
+        return;
+      }
+
+      linkInsertPromise = (async () => {
+        await this.insertWrappedLinkAfterSelectionInSourceFile(selectionContext.source, stem);
+        linkInserted = true;
+      })();
+
+      try {
+        await linkInsertPromise;
+      } finally {
+        linkInsertPromise = null;
+      }
+    };
+    const answer = await this.handleSubmit(instruction, {
+      context: selectionContext.target,
+      selectionTextOverride: selectionContext.source.selection.text,
+      allowImageGeneration: options.allowImageGeneration,
+      verbosityLevel: options.verbosityLevel,
+      onAnswerProgress: async (partialAnswer) => {
+        if (resolvedStem && linkInserted) {
+          return;
+        }
+        const earlyTitle = extractLeadingH1TitleFromCompletedLine(partialAnswer);
+        if (!earlyTitle) {
+          return;
+        }
+        if (!resolvedStem) {
+          resolvedStem = await this.renameNoteByTitle(
+            selectionContext.target,
+            earlyTitle,
+            sourceFolder
+          );
+        }
+        await ensureLinkInsertedOnce(resolvedStem);
+      }
+    });
+    if (answer === null) {
+      return;
+    }
+
+    const finalMarkdown = answer.endsWith("\n") ? answer : `${answer}\n`;
+    selectionContext.target.editor.setValue(finalMarkdown);
+    selectionContext.target.editor.setCursor({ line: 0, ch: 0 });
+
+    const renamedStem = resolvedStem ?? await this.renameNoteFromAnswer(
+      selectionContext.target,
+      answer,
+      sourceFolder
+    );
+    if (!renamedStem) {
+      new Notice("No leading # title found, keeping untitled note name.");
+      return;
+    }
+
+    if (linkInsertPromise) {
+      await linkInsertPromise;
+    }
+    if (!linkInserted) {
+      await ensureLinkInsertedOnce(renamedStem);
+    }
+    new Notice(`Linked source to (${renamedStem}).`);
   }
 
   private captureActiveContext(): ActiveEditorContext | null {

@@ -1,12 +1,14 @@
 export interface PendingSelectionPromptContext {
   filePath: string;
   selectionText: string;
+  targetMode: "current-note" | "new-note";
 }
 
 export type SelectionActionItem =
   | {
       kind: "custom";
       label: string;
+      targetMode: "new-note";
     }
   | {
       kind: "template";
@@ -25,7 +27,7 @@ const VERBOSITY_GUIDANCE: Record<number, string> = {
 
 export function buildSelectionActionItems(templates: string[]): SelectionActionItem[] {
   return [
-    { kind: "custom", label: "自定义 prompt" },
+    { kind: "custom", label: "自定义 prompt", targetMode: "new-note" },
     ...templates.map((template) => ({
       kind: "template" as const,
       label: template,
