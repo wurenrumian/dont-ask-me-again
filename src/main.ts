@@ -29,6 +29,10 @@ import {
 } from "./file-actions";
 import type { ChatDraftAnchor } from "./file-actions";
 import { FloatingBox } from "./floating-ui";
+import {
+  buildInstructionWithVerbosity,
+  SelectionPromptBinding
+} from "./prompt-options";
 import { calculateSelectionMenuLayout } from "./selection-menu-layout";
 import {
   captureSelection,
@@ -70,6 +74,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
   private statusBarEl: HTMLElement | null = null;
   private activeContext: ActiveEditorContext | null = null;
   private selectionDebounceHandle: number | null = null;
+  private selectionPromptBinding = new SelectionPromptBinding();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -266,10 +271,16 @@ export default class DontAskMeAgainPlugin extends Plugin {
       onImageGenerationUnavailable: () => {
         new Notice("请先配置生图模型。");
       },
-      onSubmit: async ({ instruction, allowImageGeneration }) => {
-        await this.handleSubmit(instruction, { allowImageGeneration });
+      verbosityLevel: this.settings.verbosityLevel,
+      onVerbosityChange: (level) => {
+        this.settings.verbosityLevel = Math.max(0, Math.min(5, level));
+        void this.saveSettings();
       },
-      onTemplateFromSelection: async (template) => this.handleTemplateFromSelection(template)
+      onSubmit: async ({ instruction, allowImageGeneration, verbosityLevel }) => {
+        await this.handleSubmit(instruction, { allowImageGeneration, verbosityLevel });
+      },
+      onTemplateFromSelection: async (template) => this.handleTemplateFromSelection(template),
+      onCustomPromptFromSelection: () => this.handleCustomPromptFromSelection()
     };
   }
 
@@ -536,6 +547,22 @@ export default class DontAskMeAgainPlugin extends Plugin {
     }
   }
 
+  private handleCustomPromptFromSelection(): void {
+    const source = this.captureActiveContext();
+    if (!source || !hasSelection(source.selection)) {
+      new Notice("Select text first.");
+      this.selectionPromptBinding.clear();
+      return;
+    }
+
+    this.selectionPromptBinding.set({
+      filePath: source.file.path,
+      selectionText: source.selection.text
+    });
+    this.syncFloatingBoxFromContext(source, false);
+    this.showFloatingBox(true);
+  }
+
   private captureActiveContext(): ActiveEditorContext | null {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     const file = view?.file;
@@ -618,6 +645,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       selectionTextOverride?: string;
       onAnswerProgress?: (answer: string) => Promise<void> | void;
       allowImageGeneration?: boolean;
+      verbosityLevel?: number;
     }
   ): Promise<string | null> {
     const context = options?.context ?? this.activeContext ?? this.captureActiveContext();
@@ -631,13 +659,20 @@ export default class DontAskMeAgainPlugin extends Plugin {
     this.floatingBox.setError("");
 
     try {
+      const pendingSelection = this.selectionPromptBinding.consume();
+      const finalInstruction = buildInstructionWithVerbosity(
+        instruction,
+        options?.verbosityLevel ?? this.settings.verbosityLevel
+      );
       const serverReady = await this.ensureServerRunning(false);
       if (!serverReady) {
         throw new Error("Local server is unavailable.");
       }
 
       const fileContent = await this.app.vault.cachedRead(context.file);
-      const selectionText = options?.selectionTextOverride ?? context.selection.text;
+      const selectionText = pendingSelection?.selectionText
+        ?? options?.selectionTextOverride
+        ?? context.selection.text;
       const request = buildToolRequest(
         crypto.randomUUID(),
         this.sessionManager.getActiveSessionId(),
@@ -645,7 +680,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
           activeFilePath: context.file.path,
           activeFileContent: fileContent,
           selectionText,
-          instruction
+          instruction: finalInstruction
         },
         this.settings.titleGenerationModelId,
         options?.allowImageGeneration && this.settings.imageGenerationModelId
@@ -684,7 +719,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
                   context.file.path,
                   fileContent,
                   selectionText,
-                  instruction
+                  finalInstruction
                 )
               }
             ]
@@ -696,7 +731,7 @@ export default class DontAskMeAgainPlugin extends Plugin {
       let answer = "";
       let streamError: Error | null = null;
       const draftRef: DraftRef = {
-        value: appendUserAndThinkingDraft(context.editor, context.file.path, instruction)
+        value: appendUserAndThinkingDraft(context.editor, context.file.path, finalInstruction)
       };
       const renderer = new StreamRenderer({
         updateThinking: (text) => {

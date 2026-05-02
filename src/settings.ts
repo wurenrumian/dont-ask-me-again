@@ -31,6 +31,7 @@ export interface DontAskMeAgainSettings {
   showStatusBar: boolean;
   floatingBoxDefaultPosition: "bottom-docked";
   openResultInCurrentTab: boolean;
+  verbosityLevel: number;
 }
 
 export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
@@ -55,7 +56,8 @@ export const DEFAULT_SETTINGS: DontAskMeAgainSettings = {
   apiFormatMode: "dama-native",
   showStatusBar: true,
   floatingBoxDefaultPosition: "bottom-docked",
-  openResultInCurrentTab: true
+  openResultInCurrentTab: true,
+  verbosityLevel: 2
 };
 
 // UI State

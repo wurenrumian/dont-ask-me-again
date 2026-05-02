@@ -83,13 +83,9 @@ export class LocalServerManager {
 
       const cwd = this.resolveServerStartupCwd();
       const showTerminal = settings.showServerTerminalOnAutoStart;
-      const child = childProcess.spawn(command, [], {
-        cwd,
-        shell: true,
-        detached: !showTerminal,
-        stdio: showTerminal ? "inherit" : "ignore",
-        windowsHide: !showTerminal
-      });
+      const child = childProcess.spawn(
+        ...this.buildSpawnSpec(command, cwd, showTerminal)
+      );
       if (!showTerminal) {
         child.unref();
       }
@@ -142,5 +138,51 @@ export class LocalServerManager {
     return new Promise((resolve) => {
       window.setTimeout(resolve, ms);
     });
+  }
+
+  private buildSpawnSpec(
+    command: string,
+    cwd: string | undefined,
+    showTerminal: boolean
+  ): [
+    command: string,
+    args: string[],
+    options: {
+      cwd?: string;
+      shell: boolean;
+      detached: boolean;
+      stdio: "ignore" | "inherit";
+      windowsHide: boolean;
+    }
+  ] {
+    if (showTerminal && this.isWindows()) {
+      return [
+        "cmd.exe",
+        ["/k", command],
+        {
+          cwd,
+          shell: false,
+          detached: false,
+          stdio: "ignore",
+          windowsHide: false
+        }
+      ];
+    }
+
+    return [
+      command,
+      [],
+      {
+        cwd,
+        shell: true,
+        detached: !showTerminal,
+        stdio: showTerminal ? "inherit" : "ignore",
+        windowsHide: !showTerminal
+      }
+    ];
+  }
+
+  private isWindows(): boolean {
+    return typeof process !== "undefined" && process.platform === "win32";
   }
 }

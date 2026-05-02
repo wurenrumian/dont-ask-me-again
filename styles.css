@@ -163,6 +163,29 @@
   align-items: stretch;
 }
 
+.dama-verbosity-pill {
+  pointer-events: auto;
+  min-height: 28px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background-color: var(--background-primary) !important;
+  color: var(--text-normal);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.dama-verbosity-slider {
+  accent-color: var(--interactive-accent);
+  cursor: pointer;
+  width: 80px;
+}
+
+
 .dama-floating-context-row {
   position: absolute;
   top: -38px;
@@ -214,11 +237,9 @@
 }
 
 .dama-context-file-pill:hover,
-.dama-image-permission-toggle:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+.dama-image-permission-toggle:hover,
+.dama-verbosity-pill:hover {
   border-color: var(--interactive-accent);
-  background-color: var(--background-modifier-hover) !important;
 }
 
 .dama-context-file-pill:empty {

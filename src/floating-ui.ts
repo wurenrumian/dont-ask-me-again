@@ -1,10 +1,12 @@
 import type { Plugin } from "obsidian";
 
+import { buildSelectionActionItems } from "./prompt-options";
 import type { SelectionUiMode } from "./settings";
 
 export interface FloatingSubmitPayload {
   instruction: string;
   allowImageGeneration: boolean;
+  verbosityLevel: number;
 }
 
 export interface FloatingBoxOptions {
@@ -12,8 +14,11 @@ export interface FloatingBoxOptions {
   mode: SelectionUiMode;
   onSubmit: (payload: FloatingSubmitPayload) => Promise<void>;
   onTemplateFromSelection: (template: string) => Promise<void>;
+  onCustomPromptFromSelection: () => void;
   imageGenerationAvailable: boolean;
   onImageGenerationUnavailable: () => void;
+  verbosityLevel: number;
+  onVerbosityChange: (level: number) => void;
 }
 
 export class FloatingBox {
@@ -23,6 +28,9 @@ export class FloatingBox {
   private contextEl: HTMLDivElement | null = null;
   private contextFileBtnEl: HTMLButtonElement | null = null;
   private imageToggleBtnEl: HTMLButtonElement | null = null;
+  private verbosityPillEl: HTMLDivElement | null = null;
+  private verbosityRangeEl: HTMLInputElement | null = null;
+
   private thinkingEl: HTMLPreElement | null = null;
   private answerEl: HTMLPreElement | null = null;
   private selectionActionEl: HTMLDivElement | null = null;
@@ -81,6 +89,33 @@ export class FloatingBox {
 
     this.contextEl.append(this.contextFileBtnEl, this.imageToggleBtnEl);
 
+    this.verbosityPillEl = document.createElement("div");
+    this.verbosityPillEl.className = "dama-verbosity-pill";
+
+    const minLabelEl = document.createElement("span");
+    minLabelEl.textContent = "简";
+
+    this.verbosityRangeEl = document.createElement("input");
+    this.verbosityRangeEl.className = "dama-verbosity-slider";
+    this.verbosityRangeEl.type = "range";
+    this.verbosityRangeEl.min = "0";
+    this.verbosityRangeEl.max = "5";
+    this.verbosityRangeEl.step = "1";
+    this.verbosityRangeEl.value = String(this.options.verbosityLevel);
+    this.verbosityRangeEl.addEventListener("input", () => {
+      const raw = Number.parseInt(this.verbosityRangeEl?.value ?? "2", 10);
+      const level = Number.isFinite(raw) ? raw : 2;
+      this.options.onVerbosityChange(level);
+    });
+
+    const maxLabelEl = document.createElement("span");
+    maxLabelEl.textContent = "繁";
+
+    this.verbosityPillEl.append(minLabelEl, this.verbosityRangeEl, maxLabelEl);
+
+    this.contextEl.append(this.verbosityPillEl);
+
+
     this.thinkingEl = document.createElement("pre");
     this.thinkingEl.className = "dama-floating-thinking dama-hidden";
 
@@ -112,7 +147,14 @@ export class FloatingBox {
     inputRowEl.className = "dama-floating-input-row";
     inputRowEl.append(this.inputEl);
 
-    this.rootEl.append(this.contextEl, inputRowEl, this.thinkingEl, this.answerEl, this.errorEl);
+    this.rootEl.append(
+      this.contextEl,
+      inputRowEl,
+      this.thinkingEl,
+      this.answerEl,
+      this.errorEl
+    );
+
     this.getMountRoot().appendChild(this.rootEl);
     this.getMountRoot().appendChild(this.selectionActionEl);
 
@@ -131,7 +173,10 @@ export class FloatingBox {
     this.contextEl = null;
     this.contextFileBtnEl = null;
     this.imageToggleBtnEl = null;
+    this.verbosityPillEl = null;
+    this.verbosityRangeEl = null;
     this.thinkingEl = null;
+
     this.answerEl = null;
     this.selectionActionEl = null;
     this.selectionIconBtnEl = null;
@@ -304,6 +349,9 @@ export class FloatingBox {
     if (!this.options.imageGenerationAvailable) {
       this.allowImageGeneration = false;
     }
+    if (this.verbosityRangeEl) {
+      this.verbosityRangeEl.value = String(this.options.verbosityLevel);
+    }
     this.updateImageToggleState();
   }
 
@@ -350,7 +398,8 @@ export class FloatingBox {
     }
 
     this.templateMenuEl.textContent = "";
-    if (this.options.templates.length === 0) {
+    const items = buildSelectionActionItems(this.options.templates);
+    if (items.length === 0) {
       const emptyEl = document.createElement("div");
       emptyEl.className = "dama-template-empty";
       emptyEl.textContent = "No templates configured.";
@@ -358,13 +407,17 @@ export class FloatingBox {
       return;
     }
 
-    this.options.templates.forEach((template) => {
+    items.forEach((item) => {
       const btn = document.createElement("button");
       btn.className = "dama-template-item";
       btn.type = "button";
-      btn.textContent = template;
+      btn.textContent = item.label;
       btn.addEventListener("click", () => {
-        void this.options.onTemplateFromSelection(template);
+        if (item.kind === "custom") {
+          this.options.onCustomPromptFromSelection();
+          return;
+        }
+        void this.options.onTemplateFromSelection(item.template);
       });
       this.templateMenuEl?.appendChild(btn);
     });
@@ -404,7 +457,8 @@ export class FloatingBox {
     try {
       await this.options.onSubmit({
         instruction,
-        allowImageGeneration: this.allowImageGeneration
+        allowImageGeneration: this.allowImageGeneration,
+        verbosityLevel: Number.parseInt(this.verbosityRangeEl?.value ?? "2", 10)
       });
     } finally {
       this.resetImageGenerationPermission();
