@@ -77,38 +77,46 @@
 
 ## 快速开始（Windows PowerShell）
 
-1. 安装 Node 依赖：
+1. 初始化本地环境：
+
+```powershell
+pnpm run setup
+```
+
+2. 安装 Node 依赖：
 
 ```powershell
 pnpm install
 ```
 
-2. 创建 Python 虚拟环境并安装服务端依赖：
+3. 创建 Python 虚拟环境并安装服务端依赖：
 
 ```powershell
 uv venv server/.venv
 uv pip install --python server/.venv/Scripts/python.exe -r server/requirements.txt
 ```
 
-3. 准备 runtime 配置文件：
+4. 准备 runtime 配置文件：
 
 ```powershell
 Copy-Item server/nanobot.config.example.json server/nanobot.config.json
 ```
 
-4. 在插件设置界面中配置模型提供商。Provider 密钥会存储在本地 `server/provider_secrets.json`。
+5. 在插件设置界面中配置模型提供商。Provider 密钥会存储在本地 `server/provider_secrets.json`。
 
-5. 启动本地 API 服务：
+6. 启动本地 API 服务：
 
 ```powershell
 server/.venv/Scripts/python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787
 ```
 
-6. 构建插件：
+7. 构建插件：
 
 ```powershell
 pnpm run build
 ```
+
+如果你已经运行过 `pnpm run setup`，第 3 步和第 4 步通常可以跳过。
 
 ## 开发命令
 

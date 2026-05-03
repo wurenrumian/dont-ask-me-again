@@ -25,3 +25,4 @@ data.json
 main.js
 server/model_providers.json
 .tmp*
+/docs/superpowers/

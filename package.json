@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
+    "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-env.ps1",
     "build": "node esbuild.config.mjs",
     "dev": "node esbuild.config.mjs --watch",
     "test": "vitest run --environment node --pool threads"
