@@ -15,19 +15,21 @@ from server.provider_config_store import (
     ensure_runtime_config_synced,
     get_model_provider_by_id,
 )
+from server.runtime_layout import detect_resource_root, detect_state_root
 from server.routes import chat, providers, sessions
 from server.runtime.nanobot_adapter import NanobotAdapter
 from server.services import title_generator
 from server.session_metadata_store import SessionMetadataStore
 from server.session_store import InMemorySessionStore, SessionRecord
 
-project_root = Path(__file__).resolve().parent.parent
+project_root = detect_state_root(__file__)
+resource_root = detect_resource_root(__file__)
 load_runtime_env(project_root)
 settings = ServerSettings()
 session_store = InMemorySessionStore()
 session_metadata_store = SessionMetadataStore.for_project(project_root)
-runtime = NanobotAdapter(project_root=project_root, settings=settings)
-ensure_runtime_config_synced(project_root)
+runtime = NanobotAdapter(project_root=project_root, resource_root=resource_root, settings=settings)
+ensure_runtime_config_synced(project_root, resource_root)
 logger = logging.getLogger("dama.server")
 
 server_context = ServerContext(

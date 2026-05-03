@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from server.runtime_layout import runtime_state_dir
 
 logger = logging.getLogger("dama.session_metadata")
 
@@ -25,7 +26,7 @@ class SessionMetadataStore:
 
     @classmethod
     def for_project(cls, project_root: Path) -> "SessionMetadataStore":
-        return cls((project_root / ".runtime" / "session-metadata.json").resolve())
+        return cls((runtime_state_dir(project_root) / "session-metadata.json").resolve())
 
     def get(self, session_id: str) -> SessionMetadata:
         data = self._read()

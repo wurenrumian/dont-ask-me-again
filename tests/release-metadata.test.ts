@@ -29,4 +29,20 @@ describe("release metadata", () => {
     expect(manifestJson.version).toBe(packageJson.version);
     expect(versionsJson[packageJson.version ?? ""]).toBe(manifestJson.minAppVersion);
   });
+
+  test("publishes plugin assets and Windows runtime assets from releases", () => {
+    const root = path.resolve(__dirname, "..");
+    const releaseWorkflow = readFileSync(
+      path.join(root, ".github", "workflows", "release.yml"),
+      "utf-8"
+    );
+
+    expect(releaseWorkflow).toContain("submodules: recursive");
+    expect(releaseWorkflow).toContain("manifest.json");
+    expect(releaseWorkflow).toContain("main.js");
+    expect(releaseWorkflow).toContain("styles.css");
+    expect(releaseWorkflow).toContain("versions.json");
+    expect(releaseWorkflow).toContain("server/scripts/build-runtime.ps1");
+    expect(releaseWorkflow).toContain("server/dist/dont-ask-me-again-server-win-x64.zip");
+  });
 });

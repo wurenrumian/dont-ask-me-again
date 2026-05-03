@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from server.runtime_layout import provider_store_path
 
 PROVIDER_SECRET_STORE_FILENAME = "provider_secrets.json"
 
 
 def provider_secret_store_path(project_root: Path) -> Path:
-    return (project_root / "server" / PROVIDER_SECRET_STORE_FILENAME).resolve()
+    return provider_store_path(project_root, PROVIDER_SECRET_STORE_FILENAME)
 
 
 def _read_store(path: Path) -> dict[str, Any]:

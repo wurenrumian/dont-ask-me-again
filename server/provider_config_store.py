@@ -15,21 +15,22 @@ from server.schemas import (
     ModelProviderSaveResponse,
 )
 from server.provider_secret_store import delete_provider_api_key, get_provider_api_key, has_provider_api_key, set_provider_api_key
+from server.runtime_layout import runtime_config_path, runtime_example_path, provider_store_path
 
 MODEL_PROVIDER_STORE_FILENAME = "model_providers.json"
 _OFFICIAL_OPENAI_BASES = {"", "https://api.openai.com/v1"}
 
 
 def _runtime_config_path(project_root: Path) -> Path:
-    return (project_root / "server" / "nanobot.config.json").resolve()
+    return runtime_config_path(project_root)
 
 
-def _runtime_example_path(project_root: Path) -> Path:
-    return (project_root / "server" / "nanobot.config.example.json").resolve()
+def _runtime_example_path(project_root: Path, resource_root: Path | None = None) -> Path:
+    return runtime_example_path(project_root, resource_root)
 
 
 def _provider_store_path(project_root: Path) -> Path:
-    return (project_root / "server" / MODEL_PROVIDER_STORE_FILENAME).resolve()
+    return provider_store_path(project_root, MODEL_PROVIDER_STORE_FILENAME)
 
 
 def _normalize_api_base(value: str | None) -> str | None:
@@ -217,9 +218,9 @@ def _sync_runtime_config_from_default_model(
     config_data["agents"]["defaults"]["model"] = model  # type: ignore[index]
 
 
-def ensure_runtime_config_synced(project_root: Path) -> None:
+def ensure_runtime_config_synced(project_root: Path, resource_root: Path | None = None) -> None:
     config_path = _runtime_config_path(project_root)
-    example_path = _runtime_example_path(project_root)
+    example_path = _runtime_example_path(project_root, resource_root)
     config_data = _load_base_config(config_path, example_path)
     store = _load_store(project_root)
     _sync_runtime_config_from_default_model(project_root, config_data, store)

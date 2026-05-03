@@ -152,3 +152,17 @@ pnpm run build
 - `server/model_providers.json`
 - `server/provider_secrets.json`
 - `server/.venv`
+
+## Release checklist
+
+This project is published as a BRAT beta plugin plus a Windows local runtime.
+
+For each release tag:
+
+- The tag name must exactly match `package.json` and `manifest.json` `version`, for example `0.1.0-beta.1`.
+- `versions.json` must contain the same plugin version mapped to `manifest.json` `minAppVersion`.
+- The GitHub Release must include BRAT plugin assets: `manifest.json`, `main.js`, `styles.css`, and `versions.json`.
+- The same GitHub Release must include the Windows runtime asset: `server/dist/dont-ask-me-again-server-win-x64.zip`.
+- The release workflow checks out submodules because the runtime packages `vendor/nanobot`.
+
+BRAT installs and updates the Obsidian plugin files. The local runtime zip is a release asset for users or plugin-side startup/download flows; BRAT does not install Python/server dependencies by itself.

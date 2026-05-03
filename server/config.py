@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from server.runtime_layout import runtime_config_path, runtime_state_dir, server_runtime_dir
 
 
 class ServerSettings(BaseSettings):
@@ -22,13 +23,13 @@ class ServerSettings(BaseSettings):
         if self.nanobot_workspace:
             return Path(self.nanobot_workspace).expanduser().resolve()
 
-        return (project_root / ".runtime" / "nanobot-workspace").resolve()
+        return (runtime_state_dir(project_root) / "nanobot-workspace").resolve()
 
     def resolve_config_path(self, project_root: Path) -> Path | None:
         if self.nanobot_config_path:
             return Path(self.nanobot_config_path).expanduser().resolve()
 
-        default_config_path = (project_root / "server" / "nanobot.config.json").resolve()
+        default_config_path = runtime_config_path(project_root)
         if default_config_path.exists():
             return default_config_path
 
@@ -38,7 +39,7 @@ class ServerSettings(BaseSettings):
 def load_runtime_env(project_root: Path) -> None:
     dotenv_candidates = [
         project_root / ".env",
-        project_root / "server" / ".env",
+        server_runtime_dir(project_root) / ".env",
     ]
     for dotenv_path in dotenv_candidates:
         _load_dotenv_file(dotenv_path)

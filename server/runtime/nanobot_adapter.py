@@ -6,13 +6,15 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from server.config import ServerSettings
+from server.runtime_layout import runtime_example_path, vendor_nanobot_root
 from server.schemas import ImageGenerationOptions
 from server.services.image_generation import ImagePayload, ImageGenerationTool, generate_image_with_model
 from loguru import logger
 
 class NanobotAdapter:
-    def __init__(self, project_root: Path, settings: ServerSettings) -> None:
+    def __init__(self, project_root: Path, settings: ServerSettings, resource_root: Path | None = None) -> None:
         self.project_root = project_root
+        self.resource_root = resource_root or project_root
         self.settings = settings
         self._ensure_vendor_on_path()
 
@@ -117,7 +119,7 @@ class NanobotAdapter:
         return asyncio.run(self.run_turn(prompt, session_id))
 
     def _ensure_vendor_on_path(self) -> None:
-        vendor_root = self.project_root / "vendor" / "nanobot"
+        vendor_root = vendor_nanobot_root(self.project_root, self.resource_root)
         vendor_path = str(vendor_root.resolve())
 
         if vendor_path not in sys.path:
@@ -127,10 +129,10 @@ class NanobotAdapter:
         config_path = self.settings.resolve_config_path(self.project_root)
 
         if config_path is None:
+            example_path = runtime_example_path(self.project_root, self.resource_root)
             raise FileNotFoundError(
-                "nanobot config not found. Copy "
-                "'server/nanobot.config.example.json' to "
-                "'server/nanobot.config.json', then set provider credentials. "
+                f"nanobot config not found. Copy '{example_path}' to "
+                f"'{config_path or example_path.with_name('nanobot.config.json')}', then set provider credentials. "
                 "Or set DAMA_NANOBOT_CONFIG_PATH."
             )
 

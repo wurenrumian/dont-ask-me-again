@@ -3,6 +3,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from server.config import ServerSettings, load_runtime_env
+from server.runtime_layout import (
+    detect_resource_root,
+    detect_state_root,
+    runtime_config_path,
+    runtime_example_path,
+    server_runtime_dir,
+)
 
 
 def _make_workspace_dir() -> Path:
@@ -35,6 +42,41 @@ def test_resolve_config_path_uses_project_default() -> None:
 
     resolved = settings.resolve_config_path(tmp_path)
     assert resolved == default_config.resolve()
+
+
+def test_server_runtime_dir_supports_packaged_layout() -> None:
+    tmp_path = _make_workspace_dir()
+
+    assert server_runtime_dir(tmp_path) == tmp_path
+
+
+def test_runtime_example_path_falls_back_to_resource_root() -> None:
+    state_root = _make_workspace_dir()
+    resource_root = _make_workspace_dir()
+    example_path = resource_root / "server" / "nanobot.config.example.json"
+    example_path.parent.mkdir(parents=True, exist_ok=True)
+    example_path.write_text("{}", encoding="utf-8")
+
+    assert runtime_example_path(state_root, resource_root) == example_path.resolve()
+
+
+def test_detect_roots_use_executable_and_meipass_when_frozen(monkeypatch) -> None:
+    state_root = _make_workspace_dir()
+    resource_root = _make_workspace_dir()
+    executable_path = state_root / "server.exe"
+    executable_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("server.runtime_layout.sys.frozen", True, raising=False)
+    monkeypatch.setattr("server.runtime_layout.sys.executable", str(executable_path), raising=False)
+    monkeypatch.setattr("server.runtime_layout.sys._MEIPASS", str(resource_root), raising=False)
+
+    assert detect_state_root(__file__) == state_root.resolve()
+    assert detect_resource_root(__file__) == resource_root.resolve()
+
+
+def test_detect_resource_root_from_nested_server_module() -> None:
+    nested_file = Path("D:/repo/server/services/image_generation.py")
+    assert detect_resource_root(nested_file) == Path("D:/repo").resolve()
 
 
 def test_load_runtime_env_reads_root_dotenv() -> None:

@@ -15,6 +15,10 @@
 *.pyc
 /.pytest_cache/
 /server/.pytest_cache/
+/build/
+/server/build/
+/server/dist/
+*.spec
 .DS_Store
 Thumbs.db
 .uv-cache/

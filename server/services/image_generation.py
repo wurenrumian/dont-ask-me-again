@@ -11,9 +11,10 @@ from loguru import logger
 
 from server.provider_config_store import get_model_provider_by_id
 from server.provider_secret_store import get_provider_api_key
+from server.runtime_layout import detect_resource_root, vendor_nanobot_root
 from server.schemas import ImageGenerationOptions, ModelProviderEntry
 
-vendor_root = Path(__file__).resolve().parents[2] / "vendor" / "nanobot"
+vendor_root = vendor_nanobot_root(detect_resource_root(__file__), detect_resource_root(__file__))
 vendor_path = str(vendor_root.resolve())
 if vendor_path not in sys.path:
     sys.path.insert(0, vendor_path)
