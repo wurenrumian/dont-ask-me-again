@@ -26,6 +26,10 @@ describe("LocalServerManager", () => {
   });
 
   it("uses cmd.exe /k when showing the server terminal on Windows", async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", {
+      value: "win32"
+    });
     const spawn = vi.fn(() => ({ unref: vi.fn() }));
     const requireMock = vi.fn((id: string) => {
       if (id === "child_process") {
@@ -45,53 +49,59 @@ describe("LocalServerManager", () => {
       }
     });
 
-    const manager = new LocalServerManager({
-      app: {
-        vault: {
-          adapter: {
-            getBasePath: () => "D:\\Distiller"
+    try {
+      const manager = new LocalServerManager({
+        app: {
+          vault: {
+            adapter: {
+              getBasePath: () => "D:\\Distiller"
+            }
           }
-        }
-      } as any,
-      manifestId: "dont-ask-me-again",
-      getSettings: () => ({
-        serverBaseUrl: "http://127.0.0.1:8787",
-        autoStartServer: true,
-        showServerTerminalOnAutoStart: true,
-        serverStartupCommand: "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787",
-        serverStartupCwd: "",
-        titleGenerationModelId: null,
-        imageGenerationModelId: null,
-        maxImagesPerRequest: 1,
-        imageGenerationSize: "auto",
-        imageGenerationQuality: "auto",
-        imageGenerationOutputFormat: "png",
-        defaultTemplates: [],
-        selectionUiMode: "templates-first",
-        apiFormatMode: "dama-native",
-        showStatusBar: true,
-        floatingBoxDefaultPosition: "bottom-docked",
-        openResultInCurrentTab: true,
-        verbosityLevel: 2
-      })
-    });
+        } as any,
+        manifestId: "dont-ask-me-again",
+        getSettings: () => ({
+          serverBaseUrl: "http://127.0.0.1:8787",
+          autoStartServer: true,
+          showServerTerminalOnAutoStart: true,
+          serverStartupCommand: "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787",
+          serverStartupCwd: "",
+          titleGenerationModelId: null,
+          imageGenerationModelId: null,
+          maxImagesPerRequest: 1,
+          imageGenerationSize: "auto",
+          imageGenerationQuality: "auto",
+          imageGenerationOutputFormat: "png",
+          defaultTemplates: [],
+          selectionUiMode: "templates-first",
+          apiFormatMode: "dama-native",
+          showStatusBar: true,
+          floatingBoxDefaultPosition: "bottom-docked",
+          openResultInCurrentTab: true,
+          verbosityLevel: 2
+        })
+      });
 
-    const ok = await manager.ensureServerRunning(false, { allowAutoStart: true });
+      const ok = await manager.ensureServerRunning(false, { allowAutoStart: true });
 
-    expect(ok).toBe(true);
-    expect(spawn).toHaveBeenCalledWith(
-      "cmd.exe",
-      [
-        "/k",
-        "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787"
-      ],
-      expect.objectContaining({
-        cwd: "D:\\Distiller\\.obsidian\\plugins\\dont-ask-me-again",
-        shell: false,
-        detached: false,
-        stdio: "ignore",
-        windowsHide: false
-      })
-    );
+      expect(ok).toBe(true);
+      expect(spawn).toHaveBeenCalledWith(
+        "cmd.exe",
+        [
+          "/k",
+          "server\\.venv\\Scripts\\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8787"
+        ],
+        expect.objectContaining({
+          cwd: "D:\\Distiller\\.obsidian\\plugins\\dont-ask-me-again",
+          shell: false,
+          detached: false,
+          stdio: "ignore",
+          windowsHide: false
+        })
+      );
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, "platform", originalPlatform);
+      }
+    }
   });
 });
