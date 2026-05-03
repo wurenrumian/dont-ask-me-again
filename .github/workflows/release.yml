@@ -89,7 +89,8 @@ jobs:
         run: uv venv server/.venv
 
       - name: Install server dependencies
-        run: uv pip install --python server/.venv/Scripts/python.exe -r server/requirements.txt
+        working-directory: server
+        run: uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 
       - name: Build Windows runtime package
         shell: powershell
