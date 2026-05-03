@@ -1,5 +1,26 @@
 # dont-ask-me-again
 
+## Install beta with BRAT
+
+This plugin is currently distributed as a BRAT beta plugin.
+
+1. Install and enable the Obsidian BRAT plugin.
+2. Run the command `BRAT: Add a beta plugin for testing`.
+3. Enter this repository URL:
+
+```text
+https://github.com/wurenrumian/dont-ask-me-again
+```
+
+BRAT installs the Obsidian plugin files from the latest GitHub Release:
+
+- `manifest.json`
+- `main.js`
+- `styles.css`
+- `versions.json`
+
+This project also needs a local runtime. Download `dont-ask-me-again-server-win-x64.zip` from the same GitHub Release, extract it, and run `dont-ask-me-again-server.exe`. BRAT does not install or start the runtime by itself.
+
 一个由 Obsidian 插件和本地 FastAPI 服务组成的项目，用于基于当前笔记上下文生成带会话能力的 AI 内容。
 
 ## 当前状态
