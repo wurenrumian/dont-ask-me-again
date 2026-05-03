@@ -59,9 +59,23 @@
 
 ## 已知限制
 
-- 当前仍然是早期版本，版本号为 `0.1.0`，还不算面向公开用户的成熟插件发布版。
+- 当前仍然是早期版本，版本号为 `0.1.0-beta.1`，还不算面向公开用户的成熟插件发布版。
 - 端到端效果仍然依赖可用的本地 provider 配置，以及正常运行的本地服务。
 - 在当前受限沙箱环境里，Node 侧的 `pnpm test` / `pnpm run build` 可能因为 `spawn EPERM` 失败，因此命令验证有时需要在限制更少的本地环境下进行。
+
+## 通过 BRAT 安装测试版
+
+1. 在 Obsidian 中先安装并启用 `BRAT`
+2. 在 BRAT 中选择 “Add beta plugin”
+3. 输入本仓库地址：`https://github.com/wurenrumian/dont-ask-me-again`
+4. 让 BRAT 从 GitHub Release 安装当前 beta 版本
+
+需要注意：
+
+- BRAT 只负责安装和更新 Obsidian 插件文件
+- 本项目仍然依赖本地 FastAPI 服务
+- 安装插件后，仍需准备本地服务运行环境并配置 provider
+- 如果你是从源码运行本项目，可以直接使用 `pnpm run setup`
 
 ## 环境约定
 

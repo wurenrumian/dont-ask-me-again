@@ -1,7 +1,7 @@
 {
   "id": "dont-ask-me-again",
   "name": "dont-ask-me-again",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "minAppVersion": "1.5.0",
   "description": "Create AI answer notes from the active Obsidian note with session-aware tool calls.",
   "author": "Codex",
